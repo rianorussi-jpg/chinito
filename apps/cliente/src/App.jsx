@@ -2,10 +2,8 @@ import { useMemo, useState } from 'react'
 import { ArrowLeft, Check, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, ShoppingCart, Trash2, UserRound } from 'lucide-react'
 
 const BASES = [
-  { id:'blanco', name:'Arroz blanco', emoji:'🍚' },
   { id:'frito', name:'Arroz frito', emoji:'🥘' },
-  { id:'tallarin', name:'Tallarín', emoji:'🍜' },
-  { id:'mixto', name:'Mixto', note:'Arroz + tallarín', emoji:'🍲' },
+  { id:'chowmein', name:'Chow mein', emoji:'🍜' },
 ]
 const GUISADOS = [
   { id:'naranja', name:'Pollo a la naranja', emoji:'🍗' },
@@ -14,6 +12,9 @@ const GUISADOS = [
   { id:'bbq', name:'Cerdo BBQ', emoji:'🍖' },
   { id:'verduras', name:'Verduras mixtas', emoji:'🥬' },
   { id:'chopsuey', name:'Chop suey', emoji:'🥡' },
+  { id:'teriyaki', name:'Pollo teriyaki', emoji:'🍱' },
+  { id:'kungpao', name:'Pollo kung pao', emoji:'🌶️' },
+  { id:'mongol', name:'Res mongoliana', emoji:'🥩' },
 ]
 const PRODUCTOS = [
   { id:1, name:'Chi-nito 1', baseCount:1, guisados:1, price:95, desc:'Ideal para un antojo rápido.' },
@@ -32,7 +33,7 @@ const EXTRAS = [
 function App(){
   const [screen,setScreen]=useState('home')
   const [product,setProduct]=useState(PRODUCTOS[2])
-  const [base,setBase]=useState(BASES[1])
+  const [base,setBase]=useState(BASES[0])
   const [guisados,setGuisados]=useState([GUISADOS[1],GUISADOS[2],GUISADOS[3]])
   const [tab,setTab]=useState('Bebidas')
   const [extras,setExtras]=useState([])
@@ -42,7 +43,7 @@ function App(){
   const [payment,setPayment]=useState('online')
   const [placed,setPlaced]=useState(false)
 
-  const addProduct=(p)=>{ setProduct(p); setBase(BASES[1]); setGuisados([]); setScreen('builder'); window.scrollTo(0,0) }
+  const addProduct=(p)=>{ setProduct(p); setBase(BASES[0]); setGuisados([]); setScreen('builder'); window.scrollTo(0,0) }
   const toggleGuisado=(g)=>{
     setGuisados(prev => prev.some(x=>x.id===g.id) ? prev.filter(x=>x.id!==g.id) : prev.length<product.guisados ? [...prev,g] : prev)
   }
@@ -112,7 +113,7 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,
       <div className="choice-grid guisos">{GUISADOS.map(x=>{const selected=guisados.some(g=>g.id===x.id); return <button className={`choice ${selected?'selected':''}`} key={x.id} onClick={()=>toggleGuisado(x)}><span className="choice-emoji">{x.emoji}</span><b>{x.name}</b>{selected&&<i><Check size={14}/></i>}</button>})}</div>
     </Step>
 
-    <Step num="3" title="Agrega más a tu orden" subtitle="Opcional">
+    <Step title="Agrega más a tu orden" subtitle="Opcional">
       <div className="tabs">{['Bebidas','Complementos','Salsas'].map(t=><button key={t} onClick={()=>setTab(t)} className={tab===t?'active':''}>{t}</button>)}</div>
       <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const selected=extras.some(x=>x.id===e.id); return <button className={`extra-card ${selected?'selected':''}`} key={e.id} onClick={()=>toggleExtra(e)}><span>{e.emoji}</span><div><b>{e.name}</b><strong>${e.price}</strong></div><i>{selected?<Check size={15}/>:<Plus size={15}/>}</i></button>})}</div>
     </Step>
@@ -121,7 +122,7 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,
   </main>
 }
 
-function Step({num,title,subtitle,right,children}){return <section className="step"><div className="step-head"><span className="step-num">{num}</span><div><h3>{title}</h3><p>{subtitle}</p></div>{right&&<div className="step-right">{right}</div>}</div>{children}</section>}
+function Step({num,title,subtitle,right,children}){return <section className="step"><div className={`step-head ${!num?'optional-step-head':''}`}>{num&&<span className="step-num">{num}</span>}<div><h3>{title}</h3><p>{subtitle}</p></div>{right&&<div className="step-right">{right}</div>}</div>{children}</section>}
 
 function Cart({product,base,guisados,extras,toggleExtra,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onPlace}){
   return <main className="page cart-page">
