@@ -1152,3 +1152,11 @@
 #menu-chinito .product-card{
   background:#eee9e4;
 }
+
+/* Inicio: Chi-nitos blancos; Complementos, Guisados para llevar y Bebidas en gris claro. */
+#menu-chinito .product-card{
+  background:#fff;
+}
+.home-scroll-section .home-add-card{
+  background:#f1eeea;
+}
