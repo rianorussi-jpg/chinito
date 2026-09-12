@@ -27,6 +27,11 @@ Archivos:
 - wok-fries.jpg
 - spring-rolls.jpg
 - te-helado.jpg
+- coca-cola.jpg
+- coca-cola-zero.jpg
+- sprite.jpg
+- fanta.jpg
+- manzanita.jpg
 - refresco.jpg
 - agua.jpg
 - salsa-extra.jpg

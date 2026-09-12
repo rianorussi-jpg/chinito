@@ -1242,3 +1242,35 @@
 @media(max-width:800px){
   .builder-page .extra-card small{font-size:7px}
 }
+
+/* Ajustes para cantidades en extras/complementos/bebidas dentro del personalizador */
+.builder-page .extra-card{
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+}
+.builder-page .extra-card-copy{
+  min-width:0;
+}
+.builder-page .extra-card-copy b,
+.builder-page .extra-card-copy strong{
+  display:block;
+}
+.builder-page .extra-card-qty{
+  justify-self:end;
+}
+@media(max-width:800px){
+  .builder-page .extra-card{
+    grid-template-columns:auto 1fr auto;
+    gap:6px;
+  }
+  .builder-page .extra-card-copy b{font-size:8.4px}
+  .builder-page .extra-card-copy strong{font-size:9.5px}
+  .builder-page .extra-card-qty{
+    grid-template-columns:20px 15px 20px;
+  }
+  .builder-page .extra-card-qty button{
+    width:20px;
+    height:20px;
+  }
+  .builder-page .extra-card-qty b{font-size:8px}
+}

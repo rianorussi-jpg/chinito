@@ -22,8 +22,12 @@ const PRODUCTOS = [
   { id:3, name:'Chi-nito 3', baseCount:1, guisados:3, price:135, desc:'El máximo de sabor en un solo bowl.', image:'/img/product/chi-nito-3.jpg' },
 ]
 const EXTRAS = [
-  { id:'te', type:'Bebidas', name:'Té helado', price:35, image:'/img/product/te-helado.jpg' },
-  { id:'refresco', type:'Bebidas', name:'Refresco', price:30, image:'/img/product/refresco.jpg' },
+  { id:'te-helado', type:'Bebidas', name:'Té helado', price:35, image:'/img/product/te-helado.jpg' },
+  { id:'coca-cola', type:'Bebidas', name:'Coca-Cola', price:30, image:'/img/product/coca-cola.jpg' },
+  { id:'coca-cola-zero', type:'Bebidas', name:'Coca-Cola Zero', price:30, image:'/img/product/coca-cola-zero.jpg' },
+  { id:'sprite', type:'Bebidas', name:'Sprite', price:30, image:'/img/product/sprite.jpg' },
+  { id:'fanta', type:'Bebidas', name:'Fanta', price:30, image:'/img/product/fanta.jpg' },
+  { id:'manzanita', type:'Bebidas', name:'Manzanita', price:30, image:'/img/product/manzanita.jpg' },
   { id:'agua', type:'Bebidas', name:'Agua', price:25, image:'/img/product/agua.jpg' },
   { id:'chinito-bites', type:'Complementos', name:'CHI•NITO BITES', price:59, image:'/img/product/chinito-bites.jpg' },
   { id:'edamames-al-wok', type:'Complementos', name:'EDAMAMES AL WOK', price:59, image:'/img/product/edamames-al-wok.jpg' },
@@ -77,8 +81,10 @@ const GUISADOS_PARA_LLEVAR = GUISADOS.map((g,index)=>({
 }))
 
 const itemUnitPrice=(item)=> item.kind==='configured'
-  ? item.product.price + item.extras.reduce((s,e)=>s+e.price,0)
+  ? item.product.price + item.extras.reduce((s,e)=>s+(e.price*(e.quantity || 1)),0)
   : item.price
+
+const formatExtras = (extras=[]) => extras.map(e => `${e.quantity && e.quantity > 1 ? `${e.quantity}x ` : ''}${e.name}`).join(', ')
 
 function App(){
   const [screen,setScreen]=useState('home')
@@ -86,7 +92,7 @@ function App(){
   const [base,setBase]=useState(BASES[0])
   const [guisados,setGuisados]=useState([GUISADOS[1]])
   const [tab,setTab]=useState('Bebidas')
-  const [extras,setExtras]=useState([])
+  const [extrasQty,setExtrasQty]=useState({})
   const [cartOpen,setCartOpen]=useState(false)
   const [profileOpen,setProfileOpen]=useState(false)
   const [isLoggedIn,setIsLoggedIn]=useState(false)
@@ -103,25 +109,37 @@ function App(){
     setProduct(p)
     setBase(BASES[0])
     setGuisados([])
-    setExtras([])
+    setExtrasQty({})
     setScreen('builder')
     window.scrollTo(0,0)
   }
   const toggleGuisado=(g)=>{
     setGuisados(prev => prev.some(x=>x.id===g.id) ? prev.filter(x=>x.id!==g.id) : prev.length<product.guisados ? [...prev,g] : prev)
   }
-  const toggleExtra=(e)=>setExtras(prev=>prev.some(x=>x.id===e.id)?prev.filter(x=>x.id!==e.id):[...prev,e])
+  const changeExtraQty=(entry,delta)=>{
+    setExtrasQty(prev=>{
+      const current = prev[entry.id]?.quantity || 0
+      const next = current + delta
+      if(next <= 0){
+        const clone = {...prev}
+        delete clone[entry.id]
+        return clone
+      }
+      return {...prev,[entry.id]:{...entry,quantity:next}}
+    })
+  }
   const ready=base && guisados.length>=1
 
   const addConfiguredToCart=()=>{
     if(!ready) return
+    const selectedExtras = Object.values(extrasQty).map(extra=>({...extra}))
     const item={
       id:`${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
       kind:'configured',
       product,
       base,
       guisados:[...guisados],
-      extras:[...extras],
+      extras:selectedExtras,
       quantity:1,
     }
     setCartItems(prev=>[...prev,item])
@@ -169,7 +187,7 @@ function App(){
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
       {cartOpen && <CartSheet items={cartItems} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={()=>{setCartOpen(false);setScreen('cart');window.scrollTo(0,0)}} />}
     </>}
-    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
+    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={()=>setPlaced(true)} />}
 
     {profileOpen && <ProfileDrawer
@@ -345,11 +363,12 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
   </main>
 }
 
-function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,toggleExtra,ready,onBack,onAdd}){
+function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extrasQty,changeExtraQty,ready,onBack,onAdd}){
   const guisadosSubtitle = product.guisados === 1 ? 'Selecciona 1 guisado' : `Selecciona de 1 a ${product.guisados} guisados`
-  const unitPrice=product.price+extras.reduce((s,e)=>s+e.price,0)
+  const selectedExtras = Object.values(extrasQty)
+  const unitPrice=product.price+selectedExtras.reduce((s,e)=>s+(e.price*e.quantity),0)
   const customLine=[base?.name,...guisados.map(g=>g.name)].filter(Boolean).join(' · ')
-  const extrasLine=extras.length?` + ${extras.map(e=>e.name).join(', ')}`:''
+  const extrasLine=selectedExtras.length?` + ${formatExtras(selectedExtras)}`:''
 
   return <main className="page builder-page">
     <div className="builder-topline"><button className="builder-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={22}/></button><h2>Personaliza tu Chi-nito</h2><span aria-hidden="true"></span></div>
@@ -365,7 +384,7 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,
 
     <Step title="Agrega más a tu orden" subtitle="Opcional">
       <div className="tabs">{['Bebidas','Complementos','Extras'].map(t=><button key={t} onClick={()=>setTab(t)} className={tab===t?'active':''}>{t}</button>)}</div>
-      <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const selected=extras.some(x=>x.id===e.id); return <button className={`extra-card ${selected?'selected':''}`} key={e.id} onClick={()=>toggleExtra(e)}><img className="extra-card-image" src={e.image} alt={e.name}/><div><b>{e.name}</b>{e.weight&&<small>{e.weight}</small>}<strong>${e.price}</strong></div><i>{selected?<Check size={15}/>:<Plus size={15}/>}</i></button>})}</div>
+      <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const qty=extrasQty[e.id]?.quantity || 0; return <article className={`extra-card ${qty>0?'selected':''}`} key={e.id}><img className="extra-card-image" src={e.image} alt={e.name}/><div className="extra-card-copy"><b>{e.name}</b>{e.weight&&<small>{e.weight}</small>}<strong>${e.price}</strong></div><div className="inline-qty extra-card-qty"><button onClick={()=>changeExtraQty(e,-1)} disabled={!qty} aria-label={`Quitar ${e.name}`}><Minus size={14}/></button><b>{qty}</b><button onClick={()=>changeExtraQty(e,1)} aria-label={`Agregar ${e.name}`}><Plus size={14}/></button></div></article>})}</div>
     </Step>
 
     <div className="sticky-action builder-cart-bar">
@@ -402,7 +421,7 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
               <h3>{configured?item.product.name:item.name}</h3>
               {configured ? <>
                 <p>{item.base?.name} · {item.guisados.map(g=>g.name).join(', ')}</p>
-                {item.extras.length>0 && <p>{item.extras.map(e=>e.name).join(', ')}</p>}
+                {item.extras.length>0 && <p>{formatExtras(item.extras)}</p>}
               </> : item.variant && <p>{item.variant}</p>}
               <strong>${unit*item.quantity}</strong>
             </div>
@@ -441,7 +460,7 @@ function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,
             {configured ? <>
               <p><b>Base:</b> {item.base?.name}</p>
               <p><b>Guisados:</b> {item.guisados.map(g=>g.name).join(', ')}</p>
-              {item.extras.length>0 && <p><b>Extras:</b> {item.extras.map(e=>e.name).join(', ')}</p>}
+              {item.extras.length>0 && <p><b>Extras:</b> {formatExtras(item.extras)}</p>}
             </> : item.variant && <p><b>Tamaño:</b> {item.variant}</p>}
           </div>
           <strong>${unit*item.quantity}</strong>
