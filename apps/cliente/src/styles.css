@@ -856,3 +856,225 @@
   .profile-drawer{width:76vw;max-width:360px;padding:16px 15px max(16px,env(safe-area-inset-bottom))}
   .profile-drawer-head h2{font-size:20px}
 }
+
+/* Inicio: Complementos + Guisados para llevar */
+.home-scroll-section{
+  max-width:1180px;
+  margin:0 auto 30px;
+  padding:0 4px;
+}
+.home-scroll-head{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:16px;
+  margin-bottom:12px;
+}
+.home-scroll-head h2{
+  margin:0;
+  font-size:24px;
+  letter-spacing:-.03em;
+}
+.home-scroll-head span{
+  color:var(--muted);
+  font-size:12px;
+}
+.home-card-scroller{
+  display:flex;
+  gap:12px;
+  overflow-x:auto;
+  overscroll-behavior-x:contain;
+  scroll-snap-type:x proximity;
+  scrollbar-width:none;
+  padding:2px 2px 10px;
+}
+.home-card-scroller::-webkit-scrollbar{display:none}
+.home-add-card{
+  flex:0 0 205px;
+  scroll-snap-align:start;
+  overflow:hidden;
+  border-radius:20px;
+  background:#fff;
+  border:1px solid rgba(0,0,0,.045);
+  box-shadow:0 9px 26px rgba(43,27,18,.07);
+}
+.home-add-visual{
+  height:116px;
+  display:grid;
+  place-items:center;
+  position:relative;
+  background:linear-gradient(145deg,#fff5e8,#f3ded1);
+}
+.home-add-visual>span{
+  font-size:58px;
+  line-height:1;
+}
+.home-add-visual.takeaway small{
+  position:absolute;
+  right:8px;
+  top:8px;
+  padding:5px 7px;
+  border-radius:999px;
+  background:rgba(22,19,19,.88);
+  color:#fff;
+  font-size:9px;
+  font-weight:800;
+}
+.home-add-copy{
+  padding:12px 12px 8px;
+}
+.home-add-copy h3{
+  min-height:34px;
+  margin:0 0 6px;
+  font-size:14px;
+  line-height:1.2;
+}
+.home-add-copy strong{
+  color:var(--red);
+  font-size:15px;
+}
+.home-add-actions{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:0 10px 11px 12px;
+}
+.home-add-actions>span{
+  font-size:11px;
+  font-weight:800;
+}
+.inline-qty{
+  display:grid;
+  grid-template-columns:28px 22px 28px;
+  align-items:center;
+  border:1px solid var(--line);
+  border-radius:999px;
+  overflow:hidden;
+  background:#fffaf7;
+}
+.inline-qty button{
+  width:28px;
+  height:28px;
+  border:0;
+  background:transparent;
+  display:grid;
+  place-items:center;
+  color:#111;
+  cursor:pointer;
+}
+.inline-qty button:last-child{
+  background:var(--red);
+  color:#fff;
+}
+.inline-qty button:disabled{
+  opacity:.3;
+  cursor:default;
+}
+.inline-qty b{
+  text-align:center;
+  font-size:11px;
+}
+.takeaway-head>div:first-child span{
+  display:block;
+  margin-top:3px;
+}
+.size-switch{
+  display:flex;
+  padding:3px;
+  border-radius:999px;
+  background:#eee5dc;
+  flex-shrink:0;
+}
+.size-switch button{
+  border:0;
+  background:transparent;
+  border-radius:999px;
+  padding:7px 11px;
+  font-size:10px;
+  font-weight:800;
+  color:#665d57;
+  cursor:pointer;
+}
+.size-switch button.active{
+  background:#fff;
+  color:var(--red);
+  box-shadow:0 3px 10px rgba(0,0,0,.07);
+}
+
+@media(max-width:800px){
+  .home-scroll-section{
+    margin:0 0 18px;
+    padding-left:8px;
+  }
+  .home-scroll-head{
+    padding-right:8px;
+    margin-bottom:8px;
+  }
+  .home-scroll-head h2{
+    font-size:17px;
+  }
+  .home-scroll-head>span,
+  .takeaway-head>div:first-child span{
+    font-size:9px;
+  }
+  .home-card-scroller{
+    gap:7px;
+    padding-right:8px;
+    padding-bottom:8px;
+  }
+  .home-add-card{
+    flex-basis:128px;
+    border-radius:14px;
+  }
+  .home-add-visual{
+    height:74px;
+  }
+  .home-add-visual>span{
+    font-size:39px;
+  }
+  .home-add-visual.takeaway small{
+    right:5px;
+    top:5px;
+    padding:3px 5px;
+    font-size:7px;
+  }
+  .home-add-copy{
+    padding:8px 7px 5px;
+  }
+  .home-add-copy h3{
+    min-height:27px;
+    margin-bottom:3px;
+    font-size:10px;
+  }
+  .home-add-copy strong{
+    font-size:11px;
+  }
+  .home-add-actions{
+    padding:0 6px 7px 7px;
+    gap:4px;
+  }
+  .home-add-actions>span{
+    font-size:8px;
+  }
+  .inline-qty{
+    grid-template-columns:23px 17px 23px;
+  }
+  .inline-qty button{
+    width:23px;
+    height:23px;
+  }
+  .inline-qty b{
+    font-size:9px;
+  }
+  .takeaway-head{
+    align-items:flex-end;
+  }
+  .size-switch{
+    padding:2px;
+  }
+  .size-switch button{
+    padding:6px 8px;
+    font-size:8px;
+  }
+}
