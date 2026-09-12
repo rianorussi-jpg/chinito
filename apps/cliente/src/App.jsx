@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, ShoppingCart, Trash2, UserRound } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound } from 'lucide-react'
 
 const BASES = [
   { id:'frito', name:'Arroz frito', emoji:'🥘' },
@@ -49,7 +49,7 @@ function App(){
   }
   const toggleExtra=(e)=>setExtras(prev=>prev.some(x=>x.id===e.id)?prev.filter(x=>x.id!==e.id):[...prev,e])
   const total=useMemo(()=>product.price+extras.reduce((s,e)=>s+e.price,0),[product,extras])
-  const ready=base && guisados.length===product.guisados
+  const ready=base && guisados.length>=1
 
   if(placed) return <Success onReset={()=>{setPlaced(false);setScreen('home');setExtras([])}} />
 
@@ -101,15 +101,16 @@ function Home({onPick}){
 }
 
 function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,toggleExtra,ready,onBack,onCart}){
+  const guisadosSubtitle = product.guisados === 1 ? 'Selecciona 1 guisado' : `Selecciona de 1 a ${product.guisados} guisados`
   return <main className="page builder-page">
-    <div className="builder-topline"><button className="builder-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={22}/></button><h2>Personaliza tu Chi-nito</h2><button className="builder-nav-btn" onClick={onCart} aria-label="Ver pedido"><ShoppingCart size={22}/></button></div>
+    <div className="builder-topline"><button className="builder-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={22}/></button><h2>Personaliza tu Chi-nito</h2><span aria-hidden="true"></span></div>
     <section className="summary-card"><div className="summary-food">🥘</div><div><h3>{product.name}</h3><p>1 base + {product.guisados} guisados</p><span>{product.desc}</span></div><strong>${product.price}</strong></section>
 
     <Step num="1" title="Elige tu base" subtitle="Selecciona una opción">
       <div className="choice-grid bases">{BASES.map(x=><button className={`choice ${base?.id===x.id?'selected':''}`} key={x.id} onClick={()=>setBase(x)}><span className="choice-emoji">{x.emoji}</span><b>{x.name}</b>{x.note&&<small>{x.note}</small>}{base?.id===x.id&&<i><Check size={14}/></i>}</button>)}</div>
     </Step>
 
-    <Step num="2" title="Elige tus guisados" subtitle={`Selecciona ${product.guisados} guisado${product.guisados>1?'s':''}`} right={<b className="counter">{guisados.length}/{product.guisados}</b>}>
+    <Step num="2" title="Elige tus guisados" subtitle={guisadosSubtitle}>
       <div className="choice-grid guisos">{GUISADOS.map(x=>{const selected=guisados.some(g=>g.id===x.id); return <button className={`choice ${selected?'selected':''}`} key={x.id} onClick={()=>toggleGuisado(x)}><span className="choice-emoji">{x.emoji}</span><b>{x.name}</b>{selected&&<i><Check size={14}/></i>}</button>})}</div>
     </Step>
 
