@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Plus, ShoppingBag, Trash2, UserRound } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
 
 const BASES = [
   { id:'frito', name:'Arroz frito', emoji:'🥘' },
@@ -37,7 +37,7 @@ function App(){
   const [guisados,setGuisados]=useState([GUISADOS[1]])
   const [tab,setTab]=useState('Bebidas')
   const [extras,setExtras]=useState([])
-  const [builderQty,setBuilderQty]=useState(1)
+  const [cartOpen,setCartOpen]=useState(false)
   const [cartItems,setCartItems]=useState([])
   const [name,setName]=useState('')
   const [phone,setPhone]=useState('')
@@ -50,7 +50,6 @@ function App(){
     setBase(BASES[0])
     setGuisados([])
     setExtras([])
-    setBuilderQty(1)
     setScreen('builder')
     window.scrollTo(0,0)
   }
@@ -68,15 +67,15 @@ function App(){
       base,
       guisados:[...guisados],
       extras:[...extras],
-      quantity:builderQty,
+      quantity:1,
     }
     setCartItems(prev=>[...prev,item])
     setScreen('home')
-    setBuilderQty(1)
     window.scrollTo({top:0,behavior:'smooth'})
   }
 
   const removeCartItem=(id)=>setCartItems(prev=>prev.filter(item=>item.id!==id))
+  const changeCartQty=(id,delta)=>setCartItems(prev=>prev.map(item=>item.id===id?{...item,quantity:Math.max(1,item.quantity+delta)}:item))
   const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
   const cartTotal=useMemo(()=>cartItems.reduce((sum,item)=>{
     const unit=item.product.price+item.extras.reduce((s,e)=>s+e.price,0)
@@ -94,9 +93,10 @@ function App(){
 
     {screen==='home' && <>
       <Home onPick={addProduct} />
-      {cartCount>0 && <button className="home-cart-float" onClick={()=>setScreen('cart')}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
+      {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
+      {cartOpen && <CartSheet items={cartItems} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={()=>{setCartOpen(false);setScreen('cart');window.scrollTo(0,0)}} />}
     </>}
-    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} quantity={builderQty} setQuantity={setBuilderQty} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
+    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='profile' && <Profile name={name} setName={setName} phone={phone} setPhone={setPhone} onBack={()=>setScreen('home')} />}
     {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onRemove={removeCartItem} onPlace={()=>setPlaced(true)} />}
   </div>
@@ -134,7 +134,7 @@ function Home({onPick}){
   </main>
 }
 
-function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,toggleExtra,ready,quantity,setQuantity,onBack,onAdd}){
+function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,toggleExtra,ready,onBack,onAdd}){
   const guisadosSubtitle = product.guisados === 1 ? 'Selecciona 1 guisado' : `Selecciona de 1 a ${product.guisados} guisados`
   const unitPrice=product.price+extras.reduce((s,e)=>s+e.price,0)
   const customLine=[base?.name,...guisados.map(g=>g.name)].filter(Boolean).join(' · ')
@@ -161,13 +161,9 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,
       <div className="builder-cart-summary">
         <small>Tu {product.name}</small>
         <span>{customLine || 'Personaliza tu Chi-nito'}{extrasLine}</span>
-        <strong>${unitPrice*quantity}</strong>
+        <strong>${unitPrice}</strong>
       </div>
       <div className="builder-cart-actions">
-        <div className="builder-qty" aria-label="Cantidad">
-          <span>{quantity}</span>
-          <button type="button" onClick={()=>setQuantity(q=>q+1)} aria-label="Agregar otro igual"><Plus size={17}/></button>
-        </div>
         <button className="primary add-cart-btn" disabled={!ready} onClick={onAdd}>Agregar al carrito</button>
       </div>
     </div>
@@ -175,6 +171,43 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,
 }
 
 function Step({num,title,subtitle,right,children}){return <section className="step"><div className={`step-head ${!num?'optional-step-head':''}`}>{num&&<span className="step-num">{num}</span>}<div><h3>{title}</h3><p>{subtitle}</p></div>{right&&<div className="step-right">{right}</div>}</div>{children}</section>}
+
+
+function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
+  return <div className="cart-sheet-overlay" onClick={onClose}>
+    <section className="cart-sheet" onClick={e=>e.stopPropagation()} aria-label="Carrito">
+      <div className="cart-sheet-handle" />
+      <div className="cart-sheet-head">
+        <div><small>TU CARRITO</small><h2>Tu pedido</h2></div>
+        <button className="cart-sheet-close" onClick={onClose} aria-label="Cerrar carrito"><X size={22}/></button>
+      </div>
+      <div className="cart-sheet-items">
+        {items.map(item=>{
+          const unit=item.product.price+item.extras.reduce((s,e)=>s+e.price,0)
+          return <article className="cart-sheet-item" key={item.id}>
+            <div className="cart-sheet-emoji">🥘</div>
+            <div className="cart-sheet-copy">
+              <h3>{item.product.name}</h3>
+              <p>{item.base?.name} · {item.guisados.map(g=>g.name).join(', ')}</p>
+              {item.extras.length>0 && <p>{item.extras.map(e=>e.name).join(', ')}</p>}
+              <strong>${unit*item.quantity}</strong>
+            </div>
+            <div className="cart-sheet-qty">
+              <button onClick={()=>onChangeQty(item.id,-1)} aria-label="Quitar uno"><Minus size={15}/></button>
+              <span>{item.quantity}</span>
+              <button onClick={()=>onChangeQty(item.id,1)} aria-label="Agregar uno"><Plus size={15}/></button>
+            </div>
+            <button className="cart-sheet-trash" onClick={()=>onRemove(item.id)} aria-label="Eliminar"><Trash2 size={17}/></button>
+          </article>
+        })}
+      </div>
+      <div className="cart-sheet-footer">
+        <div><span>Total</span><strong>${total}</strong></div>
+        <button className="primary cart-sheet-continue" onClick={onContinue}>Continuar <ChevronRight size={18}/></button>
+      </div>
+    </section>
+  </div>
+}
 
 function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onRemove,onPlace}){
   return <main className="page cart-page">
