@@ -38,6 +38,10 @@ function App(){
   const [tab,setTab]=useState('Bebidas')
   const [extras,setExtras]=useState([])
   const [cartOpen,setCartOpen]=useState(false)
+  const [profileOpen,setProfileOpen]=useState(false)
+  const [isLoggedIn,setIsLoggedIn]=useState(false)
+  const [email,setEmail]=useState('')
+  const [password,setPassword]=useState('')
   const [cartItems,setCartItems]=useState([])
   const [name,setName]=useState('')
   const [phone,setPhone]=useState('')
@@ -86,7 +90,7 @@ function App(){
 
   return <div className="app-shell">
     {screen!=='builder' && screen!=='cart' && <header className="topbar">
-      <button className="icon-btn profile-btn" onClick={()=>setScreen('profile')} aria-label="Ver perfil"><UserRound size={23}/></button>
+      <button className="icon-btn profile-btn" onClick={()=>setProfileOpen(true)} aria-label="Ver perfil"><UserRound size={23}/></button>
       <div className="brand-mini" onClick={()=>setScreen('home')}><img src="/logo.jpg" alt="Chi-nito"/></div>
       <div className="topbar-spacer" aria-hidden="true" />
     </header>}
@@ -97,22 +101,64 @@ function App(){
       {cartOpen && <CartSheet items={cartItems} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={()=>{setCartOpen(false);setScreen('cart');window.scrollTo(0,0)}} />}
     </>}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
-    {screen==='profile' && <Profile name={name} setName={setName} phone={phone} setPhone={setPhone} onBack={()=>setScreen('home')} />}
     {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={()=>setPlaced(true)} />}
+
+    {profileOpen && <ProfileDrawer
+      isLoggedIn={isLoggedIn}
+      setIsLoggedIn={setIsLoggedIn}
+      name={name}
+      setName={setName}
+      phone={phone}
+      setPhone={setPhone}
+      email={email}
+      setEmail={setEmail}
+      password={password}
+      setPassword={setPassword}
+      onClose={()=>setProfileOpen(false)}
+    />}
   </div>
 }
 
-function Profile({name,setName,phone,setPhone,onBack}){
-  return <main className="page profile-page">
-    <div className="page-title"><button className="back" onClick={onBack}><ArrowLeft/></button><div><span className="eyebrow">MI CUENTA</span><h2>Mi perfil</h2></div></div>
-    <section className="profile-card">
-      <div className="profile-avatar"><UserRound size={42}/></div>
-      <div className="profile-heading"><h3>Tus datos</h3><p>Estos datos se usarán para identificar tus pedidos de pickup.</p></div>
-      <label>Nombre completo<input value={name} onChange={e=>setName(e.target.value)} placeholder="Tu nombre" /></label>
-      <label>Teléfono<input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Tu teléfono" inputMode="tel" /></label>
-      <button className="primary profile-save" onClick={onBack}>Guardar datos</button>
-    </section>
-  </main>
+function ProfileDrawer({isLoggedIn,setIsLoggedIn,name,setName,phone,setPhone,email,setEmail,password,setPassword,onClose}){
+  const login=()=>{
+    if(!email.trim()) return
+    if(!name.trim()) setName(email.split('@')[0] || 'Cliente')
+    setIsLoggedIn(true)
+  }
+  return <div className="profile-drawer-overlay" onClick={onClose} role="presentation">
+    <aside className="profile-drawer" onClick={e=>e.stopPropagation()} aria-label="Cuenta y perfil">
+      <div className="profile-drawer-head">
+        <div><small>MI CUENTA</small><h2>{isLoggedIn?'Tu perfil':'Bienvenido'}</h2></div>
+        <button className="profile-drawer-close" onClick={onClose} aria-label="Cerrar"><X size={22}/></button>
+      </div>
+
+      {isLoggedIn ? <>
+        <div className="profile-drawer-user">
+          <div className="profile-drawer-avatar"><UserRound size={30}/></div>
+          <div><b>{name || 'Cliente Chi-nito'}</b><span>{email || 'Sesión iniciada'}</span></div>
+        </div>
+        <div className="profile-drawer-fields">
+          <label>Nombre completo<input value={name} onChange={e=>setName(e.target.value)} placeholder="Tu nombre" /></label>
+          <label>Teléfono<input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Tu teléfono" inputMode="tel" /></label>
+          <label>Correo electrónico<input value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com" inputMode="email" /></label>
+        </div>
+        <button className="primary profile-drawer-save" onClick={onClose}>Guardar cambios</button>
+        <button className="profile-drawer-logout" onClick={()=>setIsLoggedIn(false)}>Cerrar sesión</button>
+      </> : <>
+        <div className="profile-drawer-intro">
+          <div className="profile-drawer-avatar"><UserRound size={30}/></div>
+          <p>Inicia sesión para guardar tus datos y agilizar tus pedidos de pickup.</p>
+        </div>
+        <div className="profile-drawer-fields">
+          <label>Correo electrónico<input value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com" inputMode="email" /></label>
+          <label>Contraseña<input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" /></label>
+        </div>
+        <button className="primary profile-drawer-save" onClick={login}>Iniciar sesión</button>
+        <button className="profile-drawer-link" type="button">Crear una cuenta</button>
+        <p className="profile-drawer-note">También puedes hacer tu pedido sin iniciar sesión.</p>
+      </>}
+    </aside>
+  </div>
 }
 
 function Home({onPick}){
