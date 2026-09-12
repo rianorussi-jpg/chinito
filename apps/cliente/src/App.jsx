@@ -54,7 +54,7 @@ function App(){
 
   return <div className="app-shell">
     <header className="topbar">
-      <div className="brand-mini" onClick={()=>setScreen('home')}><img src="/logo.jpg"/><span>CHI-NITO</span></div>
+      <div className="brand-mini" onClick={()=>setScreen('home')}><img src="/logo.jpg" alt="Chi-nito"/></div>
       <button className="icon-btn" onClick={()=>setScreen('cart')}><ShoppingCart size={22}/><span className="cart-dot">{1+extras.length}</span></button>
     </header>
 
