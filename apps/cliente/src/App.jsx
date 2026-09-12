@@ -30,6 +30,25 @@ const EXTRAS = [
   { id:'salsa', type:'Salsas', name:'Salsa extra', price:12, emoji:'🌶️' },
 ]
 
+const COMPLEMENTOS_HOME = [
+  { id:'rollitos-home', name:'Rollitos primavera', price:35, emoji:'🥟' },
+  { id:'wanton-home', name:'Wantán crujiente', price:45, emoji:'🥠' },
+  { id:'camaron-home', name:'Camarones empanizados', price:79, emoji:'🍤' },
+  { id:'arroz-home', name:'Arroz frito extra', price:42, emoji:'🍚' },
+  { id:'chow-home', name:'Chow mein extra', price:45, emoji:'🍜' },
+  { id:'galletas-home', name:'Galletas de la fortuna', price:18, emoji:'🥠' },
+]
+
+const GUISADOS_PARA_LLEVAR = GUISADOS.map((g,index)=>({
+  ...g,
+  halfPrice:[95,95,105,110,85,90,100,100,115][index],
+  literPrice:[175,175,195,205,155,165,185,185,215][index],
+}))
+
+const itemUnitPrice=(item)=> item.kind==='configured'
+  ? item.product.price + item.extras.reduce((s,e)=>s+e.price,0)
+  : item.price
+
 function App(){
   const [screen,setScreen]=useState('home')
   const [product,setProduct]=useState(PRODUCTOS[2])
@@ -67,6 +86,7 @@ function App(){
     if(!ready) return
     const item={
       id:`${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+      kind:'configured',
       product,
       base,
       guisados:[...guisados],
@@ -78,13 +98,31 @@ function App(){
     window.scrollTo({top:0,behavior:'smooth'})
   }
 
+  const addSimpleItem=(entry)=>{
+    const key=`${entry.kind}-${entry.refId}-${entry.variant || ''}`
+    setCartItems(prev=>{
+      const existing=prev.find(item=>item.cartKey===key)
+      if(existing) return prev.map(item=>item.cartKey===key?{...item,quantity:item.quantity+1}:item)
+      return [...prev,{...entry,id:`${key}-${Date.now()}`,cartKey:key,quantity:1}]
+    })
+  }
+  const removeSimpleItem=(kind,refId,variant='')=>{
+    const key=`${kind}-${refId}-${variant}`
+    setCartItems(prev=>prev.flatMap(item=>{
+      if(item.cartKey!==key) return [item]
+      if(item.quantity<=1) return []
+      return [{...item,quantity:item.quantity-1}]
+    }))
+  }
+  const getCartQty=(kind,refId,variant='')=>cartItems.find(item=>item.cartKey===`${kind}-${refId}-${variant}`)?.quantity || 0
   const removeCartItem=(id)=>setCartItems(prev=>prev.filter(item=>item.id!==id))
-  const changeCartQty=(id,delta)=>setCartItems(prev=>prev.map(item=>item.id===id?{...item,quantity:Math.max(1,item.quantity+delta)}:item))
+  const changeCartQty=(id,delta)=>setCartItems(prev=>prev.flatMap(item=>{
+    if(item.id!==id) return [item]
+    const next=item.quantity+delta
+    return next<=0?[]:[{...item,quantity:next}]
+  }))
   const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
-  const cartTotal=useMemo(()=>cartItems.reduce((sum,item)=>{
-    const unit=item.product.price+item.extras.reduce((s,e)=>s+e.price,0)
-    return sum+(unit*item.quantity)
-  },0),[cartItems])
+  const cartTotal=useMemo(()=>cartItems.reduce((sum,item)=>sum+(itemUnitPrice(item)*item.quantity),0),[cartItems])
 
   if(placed) return <Success onReset={()=>{setPlaced(false);setScreen('home');setCartItems([])}} />
 
@@ -96,7 +134,7 @@ function App(){
     </header>}
 
     {screen==='home' && <>
-      <Home onPick={addProduct} />
+      <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} />
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
       {cartOpen && <CartSheet items={cartItems} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={()=>{setCartOpen(false);setScreen('cart');window.scrollTo(0,0)}} />}
     </>}
@@ -161,8 +199,10 @@ function ProfileDrawer({isLoggedIn,setIsLoggedIn,name,setName,phone,setPhone,ema
   </div>
 }
 
-function Home({onPick}){
+function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
+  const [takeawaySize,setTakeawaySize]=useState('half')
   const goToMenu=()=>document.getElementById('menu-chinito')?.scrollIntoView({behavior:'smooth',block:'start'})
+  const variant=takeawaySize==='half'?'1/2 litro':'1 litro'
   return <main>
     <section className="home-hero-image" onClick={goToMenu} role="button" tabIndex={0} onKeyDown={(e)=>{if(e.key==='Enter'||e.key===' ') goToMenu()}} aria-label="Ver menú de Chi-nito">
       <img src="/img/inicio.jpg" alt="Arma tu Chi-nito - Solo pickup" />
@@ -176,6 +216,55 @@ function Home({onPick}){
         <h3>{p.name}</h3><p>1 base + {p.guisados} guisado{p.guisados>1?'s':''}</p><small>{p.desc}</small>
         <div className="product-foot"><strong>Desde ${p.price}</strong><button onClick={()=>onPick(p)}>Elegir</button></div>
       </article>)}</div>
+    </section>
+
+    <section className="home-scroll-section">
+      <div className="home-scroll-head"><h2>Complementos</h2><span>Desliza para ver más</span></div>
+      <div className="home-card-scroller">
+        {COMPLEMENTOS_HOME.map(item=>{
+          const qty=getCartQty('addon',item.id)
+          return <article className="home-add-card" key={item.id}>
+            <div className="home-add-visual"><span>{item.emoji}</span></div>
+            <div className="home-add-copy"><h3>{item.name}</h3><strong>${item.price}</strong></div>
+            <div className="home-add-actions">
+              <span>Agregar</span>
+              <div className="inline-qty">
+                <button onClick={()=>onRemoveSimple('addon',item.id)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
+                <b>{qty}</b>
+                <button onClick={()=>onAddSimple({kind:'addon',refId:item.id,name:item.name,emoji:item.emoji,price:item.price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+              </div>
+            </div>
+          </article>
+        })}
+      </div>
+    </section>
+
+    <section className="home-scroll-section takeaway-section">
+      <div className="home-scroll-head takeaway-head">
+        <div><h2>Guisados para llevar</h2><span>Elige el tamaño y desliza para ver los 9</span></div>
+        <div className="size-switch" aria-label="Tamaño de guisado">
+          <button className={takeawaySize==='half'?'active':''} onClick={()=>setTakeawaySize('half')}>1/2 litro</button>
+          <button className={takeawaySize==='liter'?'active':''} onClick={()=>setTakeawaySize('liter')}>1 litro</button>
+        </div>
+      </div>
+      <div className="home-card-scroller">
+        {GUISADOS_PARA_LLEVAR.map(item=>{
+          const price=takeawaySize==='half'?item.halfPrice:item.literPrice
+          const qty=getCartQty('takeaway',item.id,variant)
+          return <article className="home-add-card" key={`${item.id}-${takeawaySize}`}>
+            <div className="home-add-visual takeaway"><span>{item.emoji}</span><small>{variant}</small></div>
+            <div className="home-add-copy"><h3>{item.name}</h3><strong>${price}</strong></div>
+            <div className="home-add-actions">
+              <span>Agregar</span>
+              <div className="inline-qty">
+                <button onClick={()=>onRemoveSimple('takeaway',item.id,variant)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
+                <b>{qty}</b>
+                <button onClick={()=>onAddSimple({kind:'takeaway',refId:item.id,variant,name:item.name,emoji:item.emoji,price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+              </div>
+            </div>
+          </article>
+        })}
+      </div>
     </section>
   </main>
 }
@@ -229,13 +318,16 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
       </div>
       <div className="cart-sheet-items">
         {items.map(item=>{
-          const unit=item.product.price+item.extras.reduce((s,e)=>s+e.price,0)
+          const unit=itemUnitPrice(item)
+          const configured=item.kind==='configured'
           return <article className="cart-sheet-item" key={item.id}>
-            <div className="cart-sheet-emoji">🥘</div>
+            <div className="cart-sheet-emoji">{configured?'🥘':item.emoji}</div>
             <div className="cart-sheet-copy">
-              <h3>{item.product.name}</h3>
-              <p>{item.base?.name} · {item.guisados.map(g=>g.name).join(', ')}</p>
-              {item.extras.length>0 && <p>{item.extras.map(e=>e.name).join(', ')}</p>}
+              <h3>{configured?item.product.name:item.name}</h3>
+              {configured ? <>
+                <p>{item.base?.name} · {item.guisados.map(g=>g.name).join(', ')}</p>
+                {item.extras.length>0 && <p>{item.extras.map(e=>e.name).join(', ')}</p>}
+              </> : item.variant && <p>{item.variant}</p>}
               <strong>${unit*item.quantity}</strong>
             </div>
             <div className="cart-sheet-qty">
@@ -264,14 +356,17 @@ function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,
     <section className="cart-list checkout-order-list">
       {items.length===0 && <p className="empty-cart-copy">Tu carrito está vacío.</p>}
       {items.map(item=>{
-        const unit=item.product.price+item.extras.reduce((s,e)=>s+e.price,0)
+        const unit=itemUnitPrice(item)
+        const configured=item.kind==='configured'
         return <div className="cart-item main configured-cart-item checkout-order-item" key={item.id}>
-          <div className="item-emoji">🥘</div>
+          <div className="item-emoji">{configured?'🥘':item.emoji}</div>
           <div className="item-copy">
-            <h3>{item.quantity} × {item.product.name}</h3>
-            <p><b>Base:</b> {item.base?.name}</p>
-            <p><b>Guisados:</b> {item.guisados.map(g=>g.name).join(', ')}</p>
-            {item.extras.length>0 && <p><b>Extras:</b> {item.extras.map(e=>e.name).join(', ')}</p>}
+            <h3>{item.quantity} × {configured?item.product.name:item.name}</h3>
+            {configured ? <>
+              <p><b>Base:</b> {item.base?.name}</p>
+              <p><b>Guisados:</b> {item.guisados.map(g=>g.name).join(', ')}</p>
+              {item.extras.length>0 && <p><b>Extras:</b> {item.extras.map(e=>e.name).join(', ')}</p>}
+            </> : item.variant && <p><b>Tamaño:</b> {item.variant}</p>}
           </div>
           <strong>${unit*item.quantity}</strong>
         </div>
