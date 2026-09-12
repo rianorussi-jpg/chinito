@@ -85,7 +85,7 @@ function App(){
   if(placed) return <Success onReset={()=>{setPlaced(false);setScreen('home');setCartItems([])}} />
 
   return <div className="app-shell">
-    {screen!=='builder' && <header className="topbar">
+    {screen!=='builder' && screen!=='cart' && <header className="topbar">
       <button className="icon-btn profile-btn" onClick={()=>setScreen('profile')} aria-label="Ver perfil"><UserRound size={23}/></button>
       <div className="brand-mini" onClick={()=>setScreen('home')}><img src="/logo.jpg" alt="Chi-nito"/></div>
       <div className="topbar-spacer" aria-hidden="true" />
@@ -98,7 +98,7 @@ function App(){
     </>}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='profile' && <Profile name={name} setName={setName} phone={phone} setPhone={setPhone} onBack={()=>setScreen('home')} />}
-    {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onRemove={removeCartItem} onPlace={()=>setPlaced(true)} />}
+    {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={()=>setPlaced(true)} />}
   </div>
 }
 
@@ -209,16 +209,17 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
   </div>
 }
 
-function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onRemove,onPlace}){
-  return <main className="page cart-page">
-    <div className="page-title"><button className="back" onClick={onBack}><ArrowLeft/></button><div><span className="eyebrow">CHECKOUT</span><h2>Tu pedido</h2></div></div>
-    <div className="pickup-banner"><ShoppingBag/><div><b>Solo pickup</b><span>Tu orden se prepara en nuestro local.</span></div><strong>RÁPIDO<br/>FÁCIL<br/>SIN ESPERAS</strong></div>
+function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onPlace}){
+  return <main className="page cart-page checkout-page">
+    <div className="checkout-topline"><button className="checkout-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={21}/></button><h2>Checkout</h2><span aria-hidden="true" /></div>
 
-    <section className="cart-list">
+    <div className="pickup-banner"><ShoppingBag size={20}/><div><b>Solo pickup</b><span>Tu orden se prepara en nuestro local.</span></div><strong>RÁPIDO · FÁCIL</strong></div>
+
+    <section className="cart-list checkout-order-list">
       {items.length===0 && <p className="empty-cart-copy">Tu carrito está vacío.</p>}
       {items.map(item=>{
         const unit=item.product.price+item.extras.reduce((s,e)=>s+e.price,0)
-        return <div className="cart-item main configured-cart-item" key={item.id}>
+        return <div className="cart-item main configured-cart-item checkout-order-item" key={item.id}>
           <div className="item-emoji">🥘</div>
           <div className="item-copy">
             <h3>{item.quantity} × {item.product.name}</h3>
@@ -227,18 +228,17 @@ function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,
             {item.extras.length>0 && <p><b>Extras:</b> {item.extras.map(e=>e.name).join(', ')}</p>}
           </div>
           <strong>${unit*item.quantity}</strong>
-          <button className="trash" onClick={()=>onRemove(item.id)} aria-label="Eliminar"><Trash2 size={18}/></button>
         </div>
       })}
     </section>
 
-    <section className="checkout-card"><div className="field-head"><Clock3/><div><h3>Hora de pickup</h3><p>Selecciona tu hora</p></div></div><select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 20–30 min</option><option>Hoy, 7:00 p.m.</option><option>Hoy, 7:30 p.m.</option><option>Hoy, 8:00 p.m.</option></select></section>
+    <section className="checkout-card"><div className="field-head"><Clock3 size={19}/><div><h3>Hora de pickup</h3><p>Selecciona tu hora</p></div></div><select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 20–30 min</option><option>Hoy, 7:00 p.m.</option><option>Hoy, 7:30 p.m.</option><option>Hoy, 8:00 p.m.</option></select></section>
 
-    <section className="checkout-card"><div className="field-head"><UserRound/><div><h3>Tus datos</h3><p>Para identificar tu pedido</p></div></div><div className="inputs"><input placeholder="Nombre completo" value={name} onChange={e=>setName(e.target.value)}/><input placeholder="Teléfono" value={phone} onChange={e=>setPhone(e.target.value)}/></div></section>
+    <section className="checkout-card"><div className="field-head"><UserRound size={19}/><div><h3>Tus datos</h3><p>Para identificar tu pedido</p></div></div><div className="inputs"><input placeholder="Nombre completo" value={name} onChange={e=>setName(e.target.value)}/><input placeholder="Teléfono" value={phone} onChange={e=>setPhone(e.target.value)}/></div></section>
 
-    <section className="checkout-card"><div className="field-head"><CreditCard/><div><h3>Método de pago</h3><p>Selecciona una opción</p></div></div><div className="pay-grid"><button className={payment==='online'?'selected':''} onClick={()=>setPayment('online')}><CreditCard/><div><b>Pagar en línea</b><span>Tarjeta de crédito o débito</span></div></button><button className={payment==='pickup'?'selected':''} onClick={()=>setPayment('pickup')}><ShoppingBag/><div><b>Pagar al recoger</b><span>Efectivo o tarjeta</span></div></button></div></section>
+    <section className="checkout-card"><div className="field-head"><CreditCard size={19}/><div><h3>Método de pago</h3><p>Selecciona una opción</p></div></div><div className="pay-grid"><button className={payment==='online'?'selected':''} onClick={()=>setPayment('online')}><CreditCard size={19}/><div><b>Pagar en línea</b><span>Tarjeta de crédito o débito</span></div></button><button className={payment==='pickup'?'selected':''} onClick={()=>setPayment('pickup')}><ShoppingBag size={19}/><div><b>Pagar al recoger</b><span>Efectivo o tarjeta</span></div></button></div></section>
 
-    <section className="total-box"><div><span>Total</span><strong>${total}</strong></div><button className="primary big" disabled={!items.length||!name||!phone} onClick={onPlace}>Confirmar pedido <ChevronRight/></button></section>
+    <section className="total-box"><div><span>Total</span><strong>${total}</strong></div><button className="primary checkout-confirm" disabled={!items.length||!name||!phone} onClick={onPlace}>Confirmar pedido <ChevronRight size={18}/></button></section>
   </main>
 }
 
