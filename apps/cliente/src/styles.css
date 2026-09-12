@@ -1274,3 +1274,38 @@
   }
   .builder-page .extra-card-qty b{font-size:8px}
 }
+
+/* Corrección: evita que el selector - 0 + se encime con nombre/precio en Personaliza tu Chi-nito. */
+@media(max-width:800px){
+  .builder-page .extra-card{
+    grid-template-columns:32px minmax(0,1fr);
+    grid-template-rows:auto auto;
+    align-items:center;
+    gap:5px 6px;
+    padding:7px;
+  }
+  .builder-page .extra-card-image{
+    grid-column:1;
+    grid-row:1;
+    align-self:start;
+  }
+  .builder-page .extra-card-copy{
+    grid-column:2;
+    grid-row:1;
+    min-width:0;
+  }
+  .builder-page .extra-card-copy b{
+    overflow-wrap:anywhere;
+  }
+  .builder-page .extra-card-qty{
+    grid-column:1 / -1;
+    grid-row:2;
+    justify-self:stretch;
+    width:100%;
+    grid-template-columns:1fr 22px 1fr;
+  }
+  .builder-page .extra-card-qty button{
+    width:100%;
+    height:22px;
+  }
+}
