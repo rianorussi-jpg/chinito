@@ -1230,3 +1230,15 @@
   .extra-card-image{width:32px;height:32px;border-radius:8px}
   .soda-product-image{width:32px;height:32px;border-radius:8px}
 }
+
+/* Personalizador: peso visible en la pestaña Extras. */
+.builder-page .extra-card small{
+  display:block;
+  margin-top:2px;
+  color:var(--muted);
+  font-size:8.5px;
+  line-height:1.1;
+}
+@media(max-width:800px){
+  .builder-page .extra-card small{font-size:7px}
+}

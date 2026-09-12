@@ -30,7 +30,17 @@ const EXTRAS = [
   { id:'dumplings', type:'Complementos', name:'DUMPLINGS', price:59, image:'/img/product/dumplings.jpg' },
   { id:'wok-fries', type:'Complementos', name:'WOK FRIES', price:59, image:'/img/product/wok-fries.jpg' },
   { id:'spring-rolls', type:'Complementos', name:'SPRING ROLLS', price:59, image:'/img/product/spring-rolls.jpg' },
-  { id:'salsa', type:'Salsas', name:'Salsa extra', price:12, image:'/img/product/salsa-extra.jpg' },
+  { id:'extra-arroz', type:'Extras', name:'Extra arroz', weight:'125 g', price:25, image:'/img/product/arroz-frito.jpg' },
+  { id:'extra-chow-mein', type:'Extras', name:'Extra chow mein', weight:'125 g', price:25, image:'/img/product/chow-mein.jpg' },
+  { id:'extra-orange-chicken', type:'Extras', name:'Extra ORANGE CHICKEN', weight:'125 g', price:39, image:'/img/product/orange-chicken.jpg' },
+  { id:'extra-bbq-pork', type:'Extras', name:'Extra BBQ PORK', weight:'125 g', price:39, image:'/img/product/bbq-pork.jpg' },
+  { id:'extra-res-cantonesa', type:'Extras', name:'Extra RES CANTONESA', weight:'125 g', price:39, image:'/img/product/res-cantonesa.jpg' },
+  { id:'extra-sweet-sour-chicken', type:'Extras', name:'Extra SWEET & SOUR CHICKEN', weight:'125 g', price:39, image:'/img/product/sweet-sour-chicken.jpg' },
+  { id:'extra-sweet-sour-pork', type:'Extras', name:'Extra SWEET & SOUR PORK', weight:'125 g', price:39, image:'/img/product/sweet-sour-pork.jpg' },
+  { id:'extra-camaron-agridulce', type:'Extras', name:'Extra CAMARÓN AGRIDULCE', weight:'125 g', price:39, image:'/img/product/camaron-agridulce.jpg' },
+  { id:'extra-kung-pao-chicken', type:'Extras', name:'Extra KUNG PAO CHICKEN', weight:'125 g', price:39, image:'/img/product/kung-pao-chicken.jpg' },
+  { id:'extra-beef-broccoli', type:'Extras', name:'Extra BEEF & BROCCOLI', weight:'125 g', price:39, image:'/img/product/beef-broccoli.jpg' },
+  { id:'extra-veggie-wok', type:'Extras', name:'Extra VEGGIE WOK', weight:'125 g', price:39, image:'/img/product/veggie-wok.jpg' },
 ]
 
 const COMPLEMENTOS_HOME = [
@@ -354,8 +364,8 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,
     </Step>
 
     <Step title="Agrega más a tu orden" subtitle="Opcional">
-      <div className="tabs">{['Bebidas','Complementos','Salsas'].map(t=><button key={t} onClick={()=>setTab(t)} className={tab===t?'active':''}>{t}</button>)}</div>
-      <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const selected=extras.some(x=>x.id===e.id); return <button className={`extra-card ${selected?'selected':''}`} key={e.id} onClick={()=>toggleExtra(e)}><img className="extra-card-image" src={e.image} alt={e.name}/><div><b>{e.name}</b><strong>${e.price}</strong></div><i>{selected?<Check size={15}/>:<Plus size={15}/>}</i></button>})}</div>
+      <div className="tabs">{['Bebidas','Complementos','Extras'].map(t=><button key={t} onClick={()=>setTab(t)} className={tab===t?'active':''}>{t}</button>)}</div>
+      <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const selected=extras.some(x=>x.id===e.id); return <button className={`extra-card ${selected?'selected':''}`} key={e.id} onClick={()=>toggleExtra(e)}><img className="extra-card-image" src={e.image} alt={e.name}/><div><b>{e.name}</b>{e.weight&&<small>{e.weight}</small>}<strong>${e.price}</strong></div><i>{selected?<Check size={15}/>:<Plus size={15}/>}</i></button>})}</div>
     </Step>
 
     <div className="sticky-action builder-cart-bar">
