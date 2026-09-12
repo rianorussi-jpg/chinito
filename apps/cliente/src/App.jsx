@@ -39,6 +39,14 @@ const COMPLEMENTOS_HOME = [
   { id:'galletas-home', name:'Galletas de la fortuna', price:18, emoji:'🥠' },
 ]
 
+const BEBIDAS_HOME = [
+  { id:'te-casa-home', name:'Té de la casa', price:35, emoji:'🧋', mode:'qty' },
+  { id:'refresco-home', name:'Refresco', price:30, emoji:'🥤', mode:'choose' },
+  { id:'agua-home', name:'Botella de agua', price:25, emoji:'💧', mode:'qty' },
+]
+
+const REFRESCO_SABORES = ['Coca-Cola','Coca-Cola Zero','Sprite','Fanta','Manzanita']
+
 const GUISADOS_PARA_LLEVAR = GUISADOS.map((g,index)=>({
   ...g,
   halfPrice:[95,95,105,110,85,90,100,100,115][index],
@@ -201,6 +209,7 @@ function ProfileDrawer({isLoggedIn,setIsLoggedIn,name,setName,phone,setPhone,ema
 
 function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
   const [takeawaySize,setTakeawaySize]=useState('half')
+  const [sodaOpen,setSodaOpen]=useState(false)
   const goToMenu=()=>document.getElementById('menu-chinito')?.scrollIntoView({behavior:'smooth',block:'start'})
   const variant=takeawaySize==='half'?'1/2 litro':'1 litro'
   return <main>
@@ -218,7 +227,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
       </article>)}</div>
     </section>
 
-    <section className="home-scroll-section">
+    <section className="home-scroll-section complements-section">
       <div className="home-scroll-head"><h2>Complementos</h2><span>Desliza para ver más</span></div>
       <div className="home-card-scroller">
         {COMPLEMENTOS_HOME.map(item=>{
@@ -266,6 +275,50 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
         })}
       </div>
     </section>
+
+    <section className="home-scroll-section drinks-section">
+      <div className="home-scroll-head"><h2>Bebidas</h2><span>Para acompañar tu pedido</span></div>
+      <div className="home-card-scroller">
+        {BEBIDAS_HOME.map(item=>{
+          const qty=getCartQty('drink',item.id)
+          return <article className="home-add-card" key={item.id}>
+            <div className="home-add-visual"><span>{item.emoji}</span></div>
+            <div className="home-add-copy"><h3>{item.name}</h3><strong>${item.price}</strong></div>
+            {item.mode==='choose' ? <div className="home-add-actions drink-choose-actions">
+              <span>Elegir</span>
+              <button className="drink-choose-btn" onClick={()=>setSodaOpen(true)}>Elegir</button>
+            </div> : <div className="home-add-actions">
+              <span>Agregar</span>
+              <div className="inline-qty">
+                <button onClick={()=>onRemoveSimple('drink',item.id)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
+                <b>{qty}</b>
+                <button onClick={()=>onAddSimple({kind:'drink',refId:item.id,name:item.name,emoji:item.emoji,price:item.price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+              </div>
+            </div>}
+          </article>
+        })}
+      </div>
+    </section>
+
+    {sodaOpen && <div className="soda-sheet-overlay" onClick={()=>setSodaOpen(false)}>
+      <section className="soda-sheet" onClick={e=>e.stopPropagation()} aria-label="Elegir sabor de refresco">
+        <div className="cart-sheet-handle" />
+        <div className="soda-sheet-head"><div><small>REFRESCO</small><h2>Elige el sabor</h2></div><button className="cart-sheet-close" onClick={()=>setSodaOpen(false)} aria-label="Cerrar"><X size={22}/></button></div>
+        <div className="soda-flavors">
+          {REFRESCO_SABORES.map(flavor=>{
+            const qty=getCartQty('drink','refresco-home',flavor)
+            return <div className="soda-flavor-row" key={flavor}>
+              <div><span>🥤</span><b>{flavor}</b></div>
+              <div className="inline-qty soda-qty">
+                <button onClick={()=>onRemoveSimple('drink','refresco-home',flavor)} disabled={!qty} aria-label={`Quitar ${flavor}`}><Minus size={14}/></button>
+                <b>{qty}</b>
+                <button onClick={()=>onAddSimple({kind:'drink',refId:'refresco-home',variant:flavor,name:'Refresco',emoji:'🥤',price:30})} aria-label={`Agregar ${flavor}`}><Plus size={14}/></button>
+              </div>
+            </div>
+          })}
+        </div>
+      </section>
+    </div>}
   </main>
 }
 
