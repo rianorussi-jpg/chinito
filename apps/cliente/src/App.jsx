@@ -25,18 +25,20 @@ const EXTRAS = [
   { id:'te', type:'Bebidas', name:'Té helado', price:35, image:'/img/product/te-helado.jpg' },
   { id:'refresco', type:'Bebidas', name:'Refresco', price:30, image:'/img/product/refresco.jpg' },
   { id:'agua', type:'Bebidas', name:'Agua', price:25, image:'/img/product/agua.jpg' },
-  { id:'rollitos', type:'Complementos', name:'Rollito primavera', price:35, image:'/img/product/rollito-primavera.jpg' },
-  { id:'wanton', type:'Complementos', name:'Wantán crujiente', price:45, image:'/img/product/wantan-crujiente.jpg' },
+  { id:'chinito-bites', type:'Complementos', name:'CHI•NITO BITES', price:59, image:'/img/product/chinito-bites.jpg' },
+  { id:'edamames-al-wok', type:'Complementos', name:'EDAMAMES AL WOK', price:59, image:'/img/product/edamames-al-wok.jpg' },
+  { id:'dumplings', type:'Complementos', name:'DUMPLINGS', price:59, image:'/img/product/dumplings.jpg' },
+  { id:'wok-fries', type:'Complementos', name:'WOK FRIES', price:59, image:'/img/product/wok-fries.jpg' },
+  { id:'spring-rolls', type:'Complementos', name:'SPRING ROLLS', price:59, image:'/img/product/spring-rolls.jpg' },
   { id:'salsa', type:'Salsas', name:'Salsa extra', price:12, image:'/img/product/salsa-extra.jpg' },
 ]
 
 const COMPLEMENTOS_HOME = [
-  { id:'rollitos-home', name:'Rollitos primavera', price:35, image:'/img/product/rollito-primavera.jpg' },
-  { id:'wanton-home', name:'Wantán crujiente', price:45, image:'/img/product/wantan-crujiente.jpg' },
-  { id:'camaron-home', name:'Camarones empanizados', price:79, image:'/img/product/camarones-empanizados.jpg' },
-  { id:'arroz-home', name:'Arroz frito extra', price:42, image:'/img/product/arroz-frito-extra.jpg' },
-  { id:'chow-home', name:'Chow mein extra', price:45, image:'/img/product/chow-mein-extra.jpg' },
-  { id:'galletas-home', name:'Galletas de la fortuna', price:18, image:'/img/product/galletas-fortuna.jpg' },
+  { id:'chinito-bites-home', name:'CHI•NITO BITES', price:59, image:'/img/product/chinito-bites.jpg', desc:'140 g · Bocados de pollo crujiente con salsa Sweet Chili, ajonjolí y cebollín.' },
+  { id:'edamames-home', name:'EDAMAMES AL WOK', price:59, image:'/img/product/edamames-al-wok.jpg', desc:'120 g · Edamames salteados con soya, chile, ajonjolí y cebollín.' },
+  { id:'dumplings-home', name:'DUMPLINGS', price:59, image:'/img/product/dumplings.jpg', desc:'4 piezas · 120 g · Dumplings de cerdo y vegetales, dorados al wok.' },
+  { id:'wok-fries-home', name:'WOK FRIES', price:59, image:'/img/product/wok-fries.jpg', desc:'140 g · Papas crujientes terminadas al wok con salsa dulce-picante, ajo, ajonjolí y cebollín.' },
+  { id:'spring-rolls-home', name:'SPRING ROLLS', price:59, image:'/img/product/spring-rolls.jpg', desc:'3 piezas · 120 g · Rollitos primavera dorados y crujientes.' },
 ]
 
 const BEBIDAS_HOME = [
@@ -245,7 +247,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
           const qty=getCartQty('addon',item.id)
           return <article className="home-add-card" key={item.id}>
             <div className="home-add-visual"><img src={item.image} alt={item.name}/></div>
-            <div className="home-add-copy"><h3>{item.name}</h3></div>
+            <div className="home-add-copy"><h3>{item.name}</h3>{item.desc&&<p>{item.desc}</p>}</div>
             <div className="home-add-actions">
               <strong className="home-add-price">${item.price}</strong>
               <div className="inline-qty">
