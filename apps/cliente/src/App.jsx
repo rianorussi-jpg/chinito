@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, ShoppingCart, Trash2, UserRound } from 'lucide-react'
 
 const BASES = [
   { id:'blanco', name:'Arroz blanco', emoji:'🍚' },
@@ -53,11 +53,11 @@ function App(){
   if(placed) return <Success onReset={()=>{setPlaced(false);setScreen('home');setExtras([])}} />
 
   return <div className="app-shell">
-    <header className="topbar">
+    {screen!=='builder' && <header className="topbar">
       <button className="icon-btn profile-btn" onClick={()=>setScreen('profile')} aria-label="Ver perfil"><UserRound size={23}/></button>
       <div className="brand-mini" onClick={()=>setScreen('home')}><img src="/logo.jpg" alt="Chi-nito"/></div>
       <div className="topbar-spacer" aria-hidden="true" />
-    </header>
+    </header>}
 
     {screen==='home' && <Home onPick={addProduct} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} onBack={()=>setScreen('home')} onCart={()=>setScreen('cart')} />}
@@ -101,7 +101,7 @@ function Home({onPick}){
 
 function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,toggleExtra,ready,onBack,onCart}){
   return <main className="page builder-page">
-    <div className="page-title"><button className="back" onClick={onBack}><ArrowLeft/></button><div><span className="eyebrow">PERSONALIZA</span><h2>Tu {product.name}</h2></div></div>
+    <div className="builder-topline"><button className="builder-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={22}/></button><h2>Personaliza tu Chi-nito</h2><button className="builder-nav-btn" onClick={onCart} aria-label="Ver pedido"><ShoppingCart size={22}/></button></div>
     <section className="summary-card"><div className="summary-food">🥘</div><div><h3>{product.name}</h3><p>1 base + {product.guisados} guisados</p><span>{product.desc}</span></div><strong>${product.price}</strong></section>
 
     <Step num="1" title="Elige tu base" subtitle="Selecciona una opción">
