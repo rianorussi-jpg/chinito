@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, ShoppingCart, Trash2, UserRound } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound } from 'lucide-react'
 
 const BASES = [
   { id:'blanco', name:'Arroz blanco', emoji:'🍚' },
@@ -54,14 +54,29 @@ function App(){
 
   return <div className="app-shell">
     <header className="topbar">
+      <button className="icon-btn profile-btn" onClick={()=>setScreen('profile')} aria-label="Ver perfil"><UserRound size={23}/></button>
       <div className="brand-mini" onClick={()=>setScreen('home')}><img src="/logo.jpg" alt="Chi-nito"/></div>
-      <button className="icon-btn" onClick={()=>setScreen('cart')}><ShoppingCart size={22}/><span className="cart-dot">{1+extras.length}</span></button>
+      <div className="topbar-spacer" aria-hidden="true" />
     </header>
 
     {screen==='home' && <Home onPick={addProduct} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} onBack={()=>setScreen('home')} onCart={()=>setScreen('cart')} />}
+    {screen==='profile' && <Profile name={name} setName={setName} phone={phone} setPhone={setPhone} onBack={()=>setScreen('home')} />}
     {screen==='cart' && <Cart product={product} base={base} guisados={guisados} extras={extras} toggleExtra={toggleExtra} total={total} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('builder')} onPlace={()=>setPlaced(true)} />}
   </div>
+}
+
+function Profile({name,setName,phone,setPhone,onBack}){
+  return <main className="page profile-page">
+    <div className="page-title"><button className="back" onClick={onBack}><ArrowLeft/></button><div><span className="eyebrow">MI CUENTA</span><h2>Mi perfil</h2></div></div>
+    <section className="profile-card">
+      <div className="profile-avatar"><UserRound size={42}/></div>
+      <div className="profile-heading"><h3>Tus datos</h3><p>Estos datos se usarán para identificar tus pedidos de pickup.</p></div>
+      <label>Nombre completo<input value={name} onChange={e=>setName(e.target.value)} placeholder="Tu nombre" /></label>
+      <label>Teléfono<input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Tu teléfono" inputMode="tel" /></label>
+      <button className="primary profile-save" onClick={onBack}>Guardar datos</button>
+    </section>
+  </main>
 }
 
 function Home({onPick}){
