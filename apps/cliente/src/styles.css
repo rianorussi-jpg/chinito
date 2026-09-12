@@ -263,7 +263,7 @@
   font-size:18px;
 }
 .builder-page .choice-grid{gap:8px}
-.builder-page .choice-grid.bases{grid-template-columns:repeat(4,minmax(0,1fr))}
+.builder-page .choice-grid.bases{grid-template-columns:repeat(2,minmax(0,1fr))}
 .builder-page .choice-grid.guisos{grid-template-columns:repeat(3,minmax(0,1fr))}
 .builder-page .choice{
   min-height:104px;
@@ -365,7 +365,7 @@
   .builder-page .step{padding:13px 0 15px}
   .builder-page .step-head h3{font-size:15px}
   .builder-page .step-head p{font-size:10px}
-  .builder-page .choice-grid.bases{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .builder-page .choice-grid.bases{grid-template-columns:repeat(2,minmax(0,1fr))}
   .builder-page .choice-grid.guisos{grid-template-columns:repeat(3,minmax(0,1fr))}
   .builder-page .choice{
     min-height:88px;
@@ -402,3 +402,6 @@
   .builder-page .choice b{font-size:8.4px}
   .builder-page .choice i{width:17px;height:17px}
 }
+
+.builder-page .choice-grid.bases .choice{min-height:112px}
+.builder-page .optional-step-head{grid-template-columns:1fr auto}
