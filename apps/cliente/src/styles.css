@@ -1146,3 +1146,8 @@
   .soda-flavor-row{padding:9px 10px}
   .soda-flavor-row>div:first-child b{font-size:11px}
 }
+
+
+/* Distintivo uniforme para los tres Chi-nitos */
+.product-card{background:#eeeeee;}
+.product-visual{background:linear-gradient(145deg,#fff5e8,#f3ded1);}
