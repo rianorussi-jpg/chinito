@@ -1,0 +1,10 @@
+{
+  "name": "chinito-react-suite",
+  "private": true,
+  "scripts": {
+    "dev:cliente": "npm --prefix apps/cliente run dev",
+    "dev:panel": "npm --prefix apps/panel run dev",
+    "dev:cocina": "npm --prefix apps/cocina run dev",
+    "build:all": "npm --prefix apps/cliente run build && npm --prefix apps/panel run build && npm --prefix apps/cocina run build"
+  }
+}
