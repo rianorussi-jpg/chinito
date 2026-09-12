@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound } from 'lucide-react'
 
 const BASES = [
   { id:'blanco', name:'Arroz blanco', emoji:'🍚' },
@@ -86,7 +86,6 @@ function Home({onPick}){
       <img src="/img/inicio.jpg" alt="Arma tu Chi-nito - Solo pickup" />
     </section>
 
-    <section className="hours"><Clock3 size={21}/><div><b>Horario de atención</b><span>Lun - Dom · 11:00 a.m. - 9:00 p.m.</span></div></section>
 
     <section className="section-wrap" id="menu-chinito">
       <div className="section-head"><div><span className="eyebrow">ELIGE TU FAVORITO</span><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
