@@ -88,7 +88,7 @@ function Home({onPick}){
 
 
     <section className="section-wrap" id="menu-chinito">
-      <div className="section-head"><div><span className="eyebrow">ELIGE TU FAVORITO</span><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
+      <div className="section-head"><div><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
       <div className="product-grid">{PRODUCTOS.map((p,i)=><article className="product-card" key={p.id}>
         <div className="product-visual">{['🥘','🍜','🥡'][i]}</div>
         <div className="badge">{p.guisados} guisado{p.guisados>1?'s':''}</div>
