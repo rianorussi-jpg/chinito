@@ -1160,3 +1160,48 @@
 .home-scroll-section .home-add-card{
   background:#f1eeea;
 }
+
+/* Imágenes de producto: reemplaza los JPG en /public/img/product/ sin cambiar el JSX. */
+.product-visual{overflow:hidden}
+.product-visual img,
+.home-add-visual img,
+.summary-food img,
+.cart-sheet-emoji img,
+.item-emoji img{
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+}
+.home-add-visual{overflow:hidden}
+.summary-food{overflow:hidden}
+.choice-emoji{
+  width:100%;
+  height:68px;
+  display:block;
+  object-fit:cover;
+  border-radius:9px;
+  font-size:0;
+}
+.extra-card-image{
+  width:42px;
+  height:42px;
+  display:block;
+  object-fit:cover;
+  border-radius:10px;
+}
+.cart-sheet-emoji,
+.item-emoji{overflow:hidden}
+.soda-product-image{
+  width:38px;
+  height:38px;
+  display:block;
+  object-fit:cover;
+  border-radius:9px;
+  flex:0 0 auto;
+}
+@media(max-width:800px){
+  .choice-emoji{height:52px;border-radius:7px}
+  .extra-card-image{width:32px;height:32px;border-radius:8px}
+  .soda-product-image{width:32px;height:32px;border-radius:8px}
+}

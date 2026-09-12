@@ -2,47 +2,47 @@ import { useMemo, useState } from 'react'
 import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
 
 const BASES = [
-  { id:'frito', name:'Arroz frito', emoji:'🥘' },
-  { id:'chowmein', name:'Chow mein', emoji:'🍜' },
+  { id:'frito', name:'Arroz frito', image:'/img/product/arroz-frito.jpg' },
+  { id:'chowmein', name:'Chow mein', image:'/img/product/chow-mein.jpg' },
 ]
 const GUISADOS = [
-  { id:'naranja', name:'Pollo a la naranja', emoji:'🍗' },
-  { id:'agridulce', name:'Pollo agridulce', emoji:'🥢' },
-  { id:'brocoli', name:'Res con brócoli', emoji:'🥦' },
-  { id:'bbq', name:'Cerdo BBQ', emoji:'🍖' },
-  { id:'verduras', name:'Verduras mixtas', emoji:'🥬' },
-  { id:'chopsuey', name:'Chop suey', emoji:'🥡' },
-  { id:'teriyaki', name:'Pollo teriyaki', emoji:'🍱' },
-  { id:'kungpao', name:'Pollo kung pao', emoji:'🌶️' },
-  { id:'mongol', name:'Res mongoliana', emoji:'🥩' },
+  { id:'naranja', name:'Pollo a la naranja', image:'/img/product/pollo-naranja.jpg' },
+  { id:'agridulce', name:'Pollo agridulce', image:'/img/product/pollo-agridulce.jpg' },
+  { id:'brocoli', name:'Res con brócoli', image:'/img/product/res-brocoli.jpg' },
+  { id:'bbq', name:'Cerdo BBQ', image:'/img/product/cerdo-bbq.jpg' },
+  { id:'verduras', name:'Verduras mixtas', image:'/img/product/verduras-mixtas.jpg' },
+  { id:'chopsuey', name:'Chop suey', image:'/img/product/chop-suey.jpg' },
+  { id:'teriyaki', name:'Pollo teriyaki', image:'/img/product/pollo-teriyaki.jpg' },
+  { id:'kungpao', name:'Pollo kung pao', image:'/img/product/pollo-kung-pao.jpg' },
+  { id:'mongol', name:'Res mongoliana', image:'/img/product/res-mongoliana.jpg' },
 ]
 const PRODUCTOS = [
-  { id:1, name:'Chi-nito 1', baseCount:1, guisados:1, price:95, desc:'Ideal para un antojo rápido.' },
-  { id:2, name:'Chi-nito 2', baseCount:1, guisados:2, price:115, desc:'El balance perfecto para comer bien.' },
-  { id:3, name:'Chi-nito 3', baseCount:1, guisados:3, price:135, desc:'El máximo de sabor en un solo bowl.' },
+  { id:1, name:'Chi-nito 1', baseCount:1, guisados:1, price:95, desc:'Ideal para un antojo rápido.', image:'/img/product/chi-nito-1.jpg' },
+  { id:2, name:'Chi-nito 2', baseCount:1, guisados:2, price:115, desc:'El balance perfecto para comer bien.', image:'/img/product/chi-nito-2.jpg' },
+  { id:3, name:'Chi-nito 3', baseCount:1, guisados:3, price:135, desc:'El máximo de sabor en un solo bowl.', image:'/img/product/chi-nito-3.jpg' },
 ]
 const EXTRAS = [
-  { id:'te', type:'Bebidas', name:'Té helado', price:35, emoji:'🥤' },
-  { id:'refresco', type:'Bebidas', name:'Refresco', price:30, emoji:'🥤' },
-  { id:'agua', type:'Bebidas', name:'Agua', price:25, emoji:'💧' },
-  { id:'rollitos', type:'Complementos', name:'Rollito primavera', price:35, emoji:'🥟' },
-  { id:'wanton', type:'Complementos', name:'Wantán crujiente', price:45, emoji:'🥠' },
-  { id:'salsa', type:'Salsas', name:'Salsa extra', price:12, emoji:'🌶️' },
+  { id:'te', type:'Bebidas', name:'Té helado', price:35, image:'/img/product/te-helado.jpg' },
+  { id:'refresco', type:'Bebidas', name:'Refresco', price:30, image:'/img/product/refresco.jpg' },
+  { id:'agua', type:'Bebidas', name:'Agua', price:25, image:'/img/product/agua.jpg' },
+  { id:'rollitos', type:'Complementos', name:'Rollito primavera', price:35, image:'/img/product/rollito-primavera.jpg' },
+  { id:'wanton', type:'Complementos', name:'Wantán crujiente', price:45, image:'/img/product/wantan-crujiente.jpg' },
+  { id:'salsa', type:'Salsas', name:'Salsa extra', price:12, image:'/img/product/salsa-extra.jpg' },
 ]
 
 const COMPLEMENTOS_HOME = [
-  { id:'rollitos-home', name:'Rollitos primavera', price:35, emoji:'🥟' },
-  { id:'wanton-home', name:'Wantán crujiente', price:45, emoji:'🥠' },
-  { id:'camaron-home', name:'Camarones empanizados', price:79, emoji:'🍤' },
-  { id:'arroz-home', name:'Arroz frito extra', price:42, emoji:'🍚' },
-  { id:'chow-home', name:'Chow mein extra', price:45, emoji:'🍜' },
-  { id:'galletas-home', name:'Galletas de la fortuna', price:18, emoji:'🥠' },
+  { id:'rollitos-home', name:'Rollitos primavera', price:35, image:'/img/product/rollito-primavera.jpg' },
+  { id:'wanton-home', name:'Wantán crujiente', price:45, image:'/img/product/wantan-crujiente.jpg' },
+  { id:'camaron-home', name:'Camarones empanizados', price:79, image:'/img/product/camarones-empanizados.jpg' },
+  { id:'arroz-home', name:'Arroz frito extra', price:42, image:'/img/product/arroz-frito-extra.jpg' },
+  { id:'chow-home', name:'Chow mein extra', price:45, image:'/img/product/chow-mein-extra.jpg' },
+  { id:'galletas-home', name:'Galletas de la fortuna', price:18, image:'/img/product/galletas-fortuna.jpg' },
 ]
 
 const BEBIDAS_HOME = [
-  { id:'te-casa-home', name:'Té de la casa', price:35, emoji:'🧋', mode:'qty' },
-  { id:'refresco-home', name:'Refresco', price:30, emoji:'🥤', mode:'choose' },
-  { id:'agua-home', name:'Botella de agua', price:25, emoji:'💧', mode:'qty' },
+  { id:'te-casa-home', name:'Té de la casa', price:35, image:'/img/product/te-casa.jpg', mode:'qty' },
+  { id:'refresco-home', name:'Refresco', price:30, image:'/img/product/refresco.jpg', mode:'choose' },
+  { id:'agua-home', name:'Botella de agua', price:25, image:'/img/product/botella-agua.jpg', mode:'qty' },
 ]
 
 const REFRESCO_SABORES = ['Coca-Cola','Coca-Cola Zero','Sprite','Fanta','Manzanita']
@@ -219,8 +219,8 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
 
     <section className="section-wrap" id="menu-chinito">
       <div className="section-head"><div><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
-      <div className="product-grid">{PRODUCTOS.map((p,i)=><article className="product-card" key={p.id}>
-        <div className="product-visual">{['🥘','🍜','🥡'][i]}</div>
+      <div className="product-grid">{PRODUCTOS.map((p)=><article className="product-card" key={p.id}>
+        <div className="product-visual"><img src={p.image} alt={p.name}/></div>
         <div className="badge">{p.guisados} guisado{p.guisados>1?'s':''}</div>
         <h3>{p.name}</h3><p>1 base + {p.guisados} guisado{p.guisados>1?'s':''}</p><small>{p.desc}</small>
         <div className="product-foot"><strong>Desde ${p.price}</strong><button onClick={()=>onPick(p)}>Elegir</button></div>
@@ -233,14 +233,14 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
         {COMPLEMENTOS_HOME.map(item=>{
           const qty=getCartQty('addon',item.id)
           return <article className="home-add-card" key={item.id}>
-            <div className="home-add-visual"><span>{item.emoji}</span></div>
+            <div className="home-add-visual"><img src={item.image} alt={item.name}/></div>
             <div className="home-add-copy"><h3>{item.name}</h3><strong>${item.price}</strong></div>
             <div className="home-add-actions">
               <span>Agregar</span>
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('addon',item.id)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
-                <button onClick={()=>onAddSimple({kind:'addon',refId:item.id,name:item.name,emoji:item.emoji,price:item.price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+                <button onClick={()=>onAddSimple({kind:'addon',refId:item.id,name:item.name,image:item.image,price:item.price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
               </div>
             </div>
           </article>
@@ -261,14 +261,14 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
           const price=takeawaySize==='half'?item.halfPrice:item.literPrice
           const qty=getCartQty('takeaway',item.id,variant)
           return <article className="home-add-card" key={`${item.id}-${takeawaySize}`}>
-            <div className="home-add-visual takeaway"><span>{item.emoji}</span><small>{variant}</small></div>
+            <div className="home-add-visual takeaway"><img src={item.image} alt={item.name}/><small>{variant}</small></div>
             <div className="home-add-copy"><h3>{item.name}</h3><strong>${price}</strong></div>
             <div className="home-add-actions">
               <span>Agregar</span>
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('takeaway',item.id,variant)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
-                <button onClick={()=>onAddSimple({kind:'takeaway',refId:item.id,variant,name:item.name,emoji:item.emoji,price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+                <button onClick={()=>onAddSimple({kind:'takeaway',refId:item.id,variant,name:item.name,image:item.image,price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
               </div>
             </div>
           </article>
@@ -282,7 +282,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
         {BEBIDAS_HOME.map(item=>{
           const qty=getCartQty('drink',item.id)
           return <article className="home-add-card" key={item.id}>
-            <div className="home-add-visual"><span>{item.emoji}</span></div>
+            <div className="home-add-visual"><img src={item.image} alt={item.name}/></div>
             <div className="home-add-copy"><h3>{item.name}</h3><strong>${item.price}</strong></div>
             {item.mode==='choose' ? <div className="home-add-actions drink-choose-actions">
               <span>Elegir</span>
@@ -292,7 +292,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('drink',item.id)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
-                <button onClick={()=>onAddSimple({kind:'drink',refId:item.id,name:item.name,emoji:item.emoji,price:item.price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+                <button onClick={()=>onAddSimple({kind:'drink',refId:item.id,name:item.name,image:item.image,price:item.price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
               </div>
             </div>}
           </article>
@@ -308,11 +308,11 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
           {REFRESCO_SABORES.map(flavor=>{
             const qty=getCartQty('drink','refresco-home',flavor)
             return <div className="soda-flavor-row" key={flavor}>
-              <div><span>🥤</span><b>{flavor}</b></div>
+              <div><img className="soda-product-image" src="/img/product/refresco.jpg" alt="Refresco"/><b>{flavor}</b></div>
               <div className="inline-qty soda-qty">
                 <button onClick={()=>onRemoveSimple('drink','refresco-home',flavor)} disabled={!qty} aria-label={`Quitar ${flavor}`}><Minus size={14}/></button>
                 <b>{qty}</b>
-                <button onClick={()=>onAddSimple({kind:'drink',refId:'refresco-home',variant:flavor,name:'Refresco',emoji:'🥤',price:30})} aria-label={`Agregar ${flavor}`}><Plus size={14}/></button>
+                <button onClick={()=>onAddSimple({kind:'drink',refId:'refresco-home',variant:flavor,name:'Refresco',image:'/img/product/refresco.jpg',price:30})} aria-label={`Agregar ${flavor}`}><Plus size={14}/></button>
               </div>
             </div>
           })}
@@ -330,19 +330,19 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,
 
   return <main className="page builder-page">
     <div className="builder-topline"><button className="builder-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={22}/></button><h2>Personaliza tu Chi-nito</h2><span aria-hidden="true"></span></div>
-    <section className="summary-card"><div className="summary-food">🥘</div><div><h3>{product.name}</h3><p>1 base + {product.guisados} guisados</p><span>{product.desc}</span></div><strong>${product.price}</strong></section>
+    <section className="summary-card"><div className="summary-food"><img src={product.image} alt={product.name}/></div><div><h3>{product.name}</h3><p>1 base + {product.guisados} guisados</p><span>{product.desc}</span></div><strong>${product.price}</strong></section>
 
     <Step num="1" title="Elige tu base" subtitle="Selecciona una opción">
-      <div className="choice-grid bases">{BASES.map(x=><button className={`choice ${base?.id===x.id?'selected':''}`} key={x.id} onClick={()=>setBase(x)}><span className="choice-emoji">{x.emoji}</span><b>{x.name}</b>{base?.id===x.id&&<i><Check size={14}/></i>}</button>)}</div>
+      <div className="choice-grid bases">{BASES.map(x=><button className={`choice ${base?.id===x.id?'selected':''}`} key={x.id} onClick={()=>setBase(x)}><img className="choice-emoji" src={x.image} alt={x.name}/><b>{x.name}</b>{base?.id===x.id&&<i><Check size={14}/></i>}</button>)}</div>
     </Step>
 
     <Step num="2" title="Elige tus guisados" subtitle={guisadosSubtitle}>
-      <div className="choice-grid guisos">{GUISADOS.map(x=>{const selected=guisados.some(g=>g.id===x.id); return <button className={`choice ${selected?'selected':''}`} key={x.id} onClick={()=>toggleGuisado(x)}><span className="choice-emoji">{x.emoji}</span><b>{x.name}</b>{selected&&<i><Check size={14}/></i>}</button>})}</div>
+      <div className="choice-grid guisos">{GUISADOS.map(x=>{const selected=guisados.some(g=>g.id===x.id); return <button className={`choice ${selected?'selected':''}`} key={x.id} onClick={()=>toggleGuisado(x)}><img className="choice-emoji" src={x.image} alt={x.name}/><b>{x.name}</b>{selected&&<i><Check size={14}/></i>}</button>})}</div>
     </Step>
 
     <Step title="Agrega más a tu orden" subtitle="Opcional">
       <div className="tabs">{['Bebidas','Complementos','Salsas'].map(t=><button key={t} onClick={()=>setTab(t)} className={tab===t?'active':''}>{t}</button>)}</div>
-      <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const selected=extras.some(x=>x.id===e.id); return <button className={`extra-card ${selected?'selected':''}`} key={e.id} onClick={()=>toggleExtra(e)}><span>{e.emoji}</span><div><b>{e.name}</b><strong>${e.price}</strong></div><i>{selected?<Check size={15}/>:<Plus size={15}/>}</i></button>})}</div>
+      <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const selected=extras.some(x=>x.id===e.id); return <button className={`extra-card ${selected?'selected':''}`} key={e.id} onClick={()=>toggleExtra(e)}><img className="extra-card-image" src={e.image} alt={e.name}/><div><b>{e.name}</b><strong>${e.price}</strong></div><i>{selected?<Check size={15}/>:<Plus size={15}/>}</i></button>})}</div>
     </Step>
 
     <div className="sticky-action builder-cart-bar">
@@ -374,7 +374,7 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
           const unit=itemUnitPrice(item)
           const configured=item.kind==='configured'
           return <article className="cart-sheet-item" key={item.id}>
-            <div className="cart-sheet-emoji">{configured?'🥘':item.emoji}</div>
+            <div className="cart-sheet-emoji"><img src={configured?item.product.image:item.image} alt={configured?item.product.name:item.name}/></div>
             <div className="cart-sheet-copy">
               <h3>{configured?item.product.name:item.name}</h3>
               {configured ? <>
@@ -412,7 +412,7 @@ function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,
         const unit=itemUnitPrice(item)
         const configured=item.kind==='configured'
         return <div className="cart-item main configured-cart-item checkout-order-item" key={item.id}>
-          <div className="item-emoji">{configured?'🥘':item.emoji}</div>
+          <div className="item-emoji"><img src={configured?item.product.image:item.image} alt={configured?item.product.name:item.name}/></div>
           <div className="item-copy">
             <h3>{item.quantity} × {configured?item.product.name:item.name}</h3>
             {configured ? <>
