@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Plus, ShoppingBag, Trash2, UserRound } from 'lucide-react'
 
 const BASES = [
   { id:'frito', name:'Arroz frito', emoji:'🥘' },
@@ -34,24 +34,56 @@ function App(){
   const [screen,setScreen]=useState('home')
   const [product,setProduct]=useState(PRODUCTOS[2])
   const [base,setBase]=useState(BASES[0])
-  const [guisados,setGuisados]=useState([GUISADOS[1],GUISADOS[2],GUISADOS[3]])
+  const [guisados,setGuisados]=useState([GUISADOS[1]])
   const [tab,setTab]=useState('Bebidas')
   const [extras,setExtras]=useState([])
+  const [builderQty,setBuilderQty]=useState(1)
+  const [cartItems,setCartItems]=useState([])
   const [name,setName]=useState('')
   const [phone,setPhone]=useState('')
   const [pickup,setPickup]=useState('Lo antes posible · 20–30 min')
   const [payment,setPayment]=useState('online')
   const [placed,setPlaced]=useState(false)
 
-  const addProduct=(p)=>{ setProduct(p); setBase(BASES[0]); setGuisados([]); setScreen('builder'); window.scrollTo(0,0) }
+  const addProduct=(p)=>{
+    setProduct(p)
+    setBase(BASES[0])
+    setGuisados([])
+    setExtras([])
+    setBuilderQty(1)
+    setScreen('builder')
+    window.scrollTo(0,0)
+  }
   const toggleGuisado=(g)=>{
     setGuisados(prev => prev.some(x=>x.id===g.id) ? prev.filter(x=>x.id!==g.id) : prev.length<product.guisados ? [...prev,g] : prev)
   }
   const toggleExtra=(e)=>setExtras(prev=>prev.some(x=>x.id===e.id)?prev.filter(x=>x.id!==e.id):[...prev,e])
-  const total=useMemo(()=>product.price+extras.reduce((s,e)=>s+e.price,0),[product,extras])
   const ready=base && guisados.length>=1
 
-  if(placed) return <Success onReset={()=>{setPlaced(false);setScreen('home');setExtras([])}} />
+  const addConfiguredToCart=()=>{
+    if(!ready) return
+    const item={
+      id:`${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+      product,
+      base,
+      guisados:[...guisados],
+      extras:[...extras],
+      quantity:builderQty,
+    }
+    setCartItems(prev=>[...prev,item])
+    setScreen('home')
+    setBuilderQty(1)
+    window.scrollTo({top:0,behavior:'smooth'})
+  }
+
+  const removeCartItem=(id)=>setCartItems(prev=>prev.filter(item=>item.id!==id))
+  const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
+  const cartTotal=useMemo(()=>cartItems.reduce((sum,item)=>{
+    const unit=item.product.price+item.extras.reduce((s,e)=>s+e.price,0)
+    return sum+(unit*item.quantity)
+  },0),[cartItems])
+
+  if(placed) return <Success onReset={()=>{setPlaced(false);setScreen('home');setCartItems([])}} />
 
   return <div className="app-shell">
     {screen!=='builder' && <header className="topbar">
@@ -60,10 +92,13 @@ function App(){
       <div className="topbar-spacer" aria-hidden="true" />
     </header>}
 
-    {screen==='home' && <Home onPick={addProduct} />}
-    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} onBack={()=>setScreen('home')} onCart={()=>setScreen('cart')} />}
+    {screen==='home' && <>
+      <Home onPick={addProduct} />
+      {cartCount>0 && <button className="home-cart-float" onClick={()=>setScreen('cart')}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
+    </>}
+    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extras={extras} toggleExtra={toggleExtra} ready={ready} quantity={builderQty} setQuantity={setBuilderQty} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='profile' && <Profile name={name} setName={setName} phone={phone} setPhone={setPhone} onBack={()=>setScreen('home')} />}
-    {screen==='cart' && <Cart product={product} base={base} guisados={guisados} extras={extras} toggleExtra={toggleExtra} total={total} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('builder')} onPlace={()=>setPlaced(true)} />}
+    {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onRemove={removeCartItem} onPlace={()=>setPlaced(true)} />}
   </div>
 }
 
@@ -87,7 +122,6 @@ function Home({onPick}){
       <img src="/img/inicio.jpg" alt="Arma tu Chi-nito - Solo pickup" />
     </section>
 
-
     <section className="section-wrap" id="menu-chinito">
       <div className="section-head"><div><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
       <div className="product-grid">{PRODUCTOS.map((p,i)=><article className="product-card" key={p.id}>
@@ -100,14 +134,18 @@ function Home({onPick}){
   </main>
 }
 
-function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,toggleExtra,ready,onBack,onCart}){
+function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,toggleExtra,ready,quantity,setQuantity,onBack,onAdd}){
   const guisadosSubtitle = product.guisados === 1 ? 'Selecciona 1 guisado' : `Selecciona de 1 a ${product.guisados} guisados`
+  const unitPrice=product.price+extras.reduce((s,e)=>s+e.price,0)
+  const customLine=[base?.name,...guisados.map(g=>g.name)].filter(Boolean).join(' · ')
+  const extrasLine=extras.length?` + ${extras.map(e=>e.name).join(', ')}`:''
+
   return <main className="page builder-page">
     <div className="builder-topline"><button className="builder-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={22}/></button><h2>Personaliza tu Chi-nito</h2><span aria-hidden="true"></span></div>
     <section className="summary-card"><div className="summary-food">🥘</div><div><h3>{product.name}</h3><p>1 base + {product.guisados} guisados</p><span>{product.desc}</span></div><strong>${product.price}</strong></section>
 
     <Step num="1" title="Elige tu base" subtitle="Selecciona una opción">
-      <div className="choice-grid bases">{BASES.map(x=><button className={`choice ${base?.id===x.id?'selected':''}`} key={x.id} onClick={()=>setBase(x)}><span className="choice-emoji">{x.emoji}</span><b>{x.name}</b>{x.note&&<small>{x.note}</small>}{base?.id===x.id&&<i><Check size={14}/></i>}</button>)}</div>
+      <div className="choice-grid bases">{BASES.map(x=><button className={`choice ${base?.id===x.id?'selected':''}`} key={x.id} onClick={()=>setBase(x)}><span className="choice-emoji">{x.emoji}</span><b>{x.name}</b>{base?.id===x.id&&<i><Check size={14}/></i>}</button>)}</div>
     </Step>
 
     <Step num="2" title="Elige tus guisados" subtitle={guisadosSubtitle}>
@@ -119,20 +157,46 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extras,
       <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const selected=extras.some(x=>x.id===e.id); return <button className={`extra-card ${selected?'selected':''}`} key={e.id} onClick={()=>toggleExtra(e)}><span>{e.emoji}</span><div><b>{e.name}</b><strong>${e.price}</strong></div><i>{selected?<Check size={15}/>:<Plus size={15}/>}</i></button>})}</div>
     </Step>
 
-    <div className="sticky-action"><div><small>Tu {product.name}</small><strong>${product.price+extras.reduce((s,e)=>s+e.price,0)}</strong></div><button className="primary" disabled={!ready} onClick={onCart}>Ver pedido <ChevronRight size={19}/></button></div>
+    <div className="sticky-action builder-cart-bar">
+      <div className="builder-cart-summary">
+        <small>Tu {product.name}</small>
+        <span>{customLine || 'Personaliza tu Chi-nito'}{extrasLine}</span>
+        <strong>${unitPrice*quantity}</strong>
+      </div>
+      <div className="builder-cart-actions">
+        <div className="builder-qty" aria-label="Cantidad">
+          <span>{quantity}</span>
+          <button type="button" onClick={()=>setQuantity(q=>q+1)} aria-label="Agregar otro igual"><Plus size={17}/></button>
+        </div>
+        <button className="primary add-cart-btn" disabled={!ready} onClick={onAdd}>Agregar al carrito</button>
+      </div>
+    </div>
   </main>
 }
 
 function Step({num,title,subtitle,right,children}){return <section className="step"><div className={`step-head ${!num?'optional-step-head':''}`}>{num&&<span className="step-num">{num}</span>}<div><h3>{title}</h3><p>{subtitle}</p></div>{right&&<div className="step-right">{right}</div>}</div>{children}</section>}
 
-function Cart({product,base,guisados,extras,toggleExtra,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onPlace}){
+function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onRemove,onPlace}){
   return <main className="page cart-page">
     <div className="page-title"><button className="back" onClick={onBack}><ArrowLeft/></button><div><span className="eyebrow">CHECKOUT</span><h2>Tu pedido</h2></div></div>
     <div className="pickup-banner"><ShoppingBag/><div><b>Solo pickup</b><span>Tu orden se prepara en nuestro local.</span></div><strong>RÁPIDO<br/>FÁCIL<br/>SIN ESPERAS</strong></div>
 
     <section className="cart-list">
-      <div className="cart-item main"><div className="item-emoji">🥘</div><div className="item-copy"><h3>{product.name}</h3><p><b>Base:</b> {base?.name}</p><p><b>Guisados:</b> {guisados.map(g=>g.name).join(', ')}</p><button onClick={onBack}>Editar</button></div><strong>${product.price}</strong></div>
-      {extras.map(e=><div className="cart-item" key={e.id}><div className="item-emoji small">{e.emoji}</div><div className="item-copy"><h3>{e.name}</h3></div><strong>${e.price}</strong><button className="trash" onClick={()=>toggleExtra(e)}><Trash2 size={18}/></button></div>)}
+      {items.length===0 && <p className="empty-cart-copy">Tu carrito está vacío.</p>}
+      {items.map(item=>{
+        const unit=item.product.price+item.extras.reduce((s,e)=>s+e.price,0)
+        return <div className="cart-item main configured-cart-item" key={item.id}>
+          <div className="item-emoji">🥘</div>
+          <div className="item-copy">
+            <h3>{item.quantity} × {item.product.name}</h3>
+            <p><b>Base:</b> {item.base?.name}</p>
+            <p><b>Guisados:</b> {item.guisados.map(g=>g.name).join(', ')}</p>
+            {item.extras.length>0 && <p><b>Extras:</b> {item.extras.map(e=>e.name).join(', ')}</p>}
+          </div>
+          <strong>${unit*item.quantity}</strong>
+          <button className="trash" onClick={()=>onRemove(item.id)} aria-label="Eliminar"><Trash2 size={18}/></button>
+        </div>
+      })}
     </section>
 
     <section className="checkout-card"><div className="field-head"><Clock3/><div><h3>Hora de pickup</h3><p>Selecciona tu hora</p></div></div><select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 20–30 min</option><option>Hoy, 7:00 p.m.</option><option>Hoy, 7:30 p.m.</option><option>Hoy, 8:00 p.m.</option></select></section>
@@ -141,7 +205,7 @@ function Cart({product,base,guisados,extras,toggleExtra,total,pickup,setPickup,n
 
     <section className="checkout-card"><div className="field-head"><CreditCard/><div><h3>Método de pago</h3><p>Selecciona una opción</p></div></div><div className="pay-grid"><button className={payment==='online'?'selected':''} onClick={()=>setPayment('online')}><CreditCard/><div><b>Pagar en línea</b><span>Tarjeta de crédito o débito</span></div></button><button className={payment==='pickup'?'selected':''} onClick={()=>setPayment('pickup')}><ShoppingBag/><div><b>Pagar al recoger</b><span>Efectivo o tarjeta</span></div></button></div></section>
 
-    <section className="total-box"><div><span>Total</span><strong>${total}</strong></div><button className="primary big" disabled={!name||!phone} onClick={onPlace}>Confirmar pedido <ChevronRight/></button></section>
+    <section className="total-box"><div><span>Total</span><strong>${total}</strong></div><button className="primary big" disabled={!items.length||!name||!phone} onClick={onPlace}>Confirmar pedido <ChevronRight/></button></section>
   </main>
 }
 
