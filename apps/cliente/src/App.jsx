@@ -51,6 +51,17 @@ const GUISADOS_PARA_LLEVAR = GUISADOS.map((g,index)=>({
   ...g,
   halfPrice:[95,95,105,110,85,90,100,100,115][index],
   literPrice:[175,175,195,205,155,165,185,185,215][index],
+  description:[
+    'Pollo con salsa cítrica de naranja.',
+    'Pollo en salsa dulce y ligeramente ácida.',
+    'Res salteada con brócoli y salsa de la casa.',
+    'Cerdo glaseado estilo BBQ chino.',
+    'Mezcla de verduras salteadas al wok.',
+    'Verduras salteadas en salsa oriental.',
+    'Pollo glaseado con salsa teriyaki.',
+    'Pollo con un toque picante y especias.',
+    'Res salteada en salsa dulce y especiada.',
+  ][index],
 }))
 
 const itemUnitPrice=(item)=> item.kind==='configured'
@@ -234,9 +245,9 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
           const qty=getCartQty('addon',item.id)
           return <article className="home-add-card" key={item.id}>
             <div className="home-add-visual"><img src={item.image} alt={item.name}/></div>
-            <div className="home-add-copy"><h3>{item.name}</h3><strong>${item.price}</strong></div>
+            <div className="home-add-copy"><h3>{item.name}</h3></div>
             <div className="home-add-actions">
-              <span>Agregar</span>
+              <strong className="home-add-price">${item.price}</strong>
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('addon',item.id)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
@@ -262,9 +273,9 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
           const qty=getCartQty('takeaway',item.id,variant)
           return <article className="home-add-card" key={`${item.id}-${takeawaySize}`}>
             <div className="home-add-visual takeaway"><img src={item.image} alt={item.name}/><small>{variant}</small></div>
-            <div className="home-add-copy"><h3>{item.name}</h3><strong>${price}</strong></div>
+            <div className="home-add-copy takeaway-copy"><h3>{item.name}</h3><p>{item.description}</p></div>
             <div className="home-add-actions">
-              <span>Agregar</span>
+              <strong className="home-add-price">${price}</strong>
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('takeaway',item.id,variant)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
@@ -283,12 +294,12 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
           const qty=getCartQty('drink',item.id)
           return <article className="home-add-card" key={item.id}>
             <div className="home-add-visual"><img src={item.image} alt={item.name}/></div>
-            <div className="home-add-copy"><h3>{item.name}</h3><strong>${item.price}</strong></div>
+            <div className="home-add-copy"><h3>{item.name}</h3></div>
             {item.mode==='choose' ? <div className="home-add-actions drink-choose-actions">
-              <span>Elegir</span>
+              <strong className="home-add-price">${item.price}</strong>
               <button className="drink-choose-btn" onClick={()=>setSodaOpen(true)}>Elegir</button>
             </div> : <div className="home-add-actions">
-              <span>Agregar</span>
+              <strong className="home-add-price">${item.price}</strong>
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('drink',item.id)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
