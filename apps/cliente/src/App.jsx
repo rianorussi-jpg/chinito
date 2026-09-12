@@ -6,15 +6,15 @@ const BASES = [
   { id:'chowmein', name:'Chow mein', image:'/img/product/chow-mein.jpg' },
 ]
 const GUISADOS = [
-  { id:'naranja', name:'Pollo a la naranja', image:'/img/product/pollo-naranja.jpg' },
-  { id:'agridulce', name:'Pollo agridulce', image:'/img/product/pollo-agridulce.jpg' },
-  { id:'brocoli', name:'Res con brócoli', image:'/img/product/res-brocoli.jpg' },
-  { id:'bbq', name:'Cerdo BBQ', image:'/img/product/cerdo-bbq.jpg' },
-  { id:'verduras', name:'Verduras mixtas', image:'/img/product/verduras-mixtas.jpg' },
-  { id:'chopsuey', name:'Chop suey', image:'/img/product/chop-suey.jpg' },
-  { id:'teriyaki', name:'Pollo teriyaki', image:'/img/product/pollo-teriyaki.jpg' },
-  { id:'kungpao', name:'Pollo kung pao', image:'/img/product/pollo-kung-pao.jpg' },
-  { id:'mongol', name:'Res mongoliana', image:'/img/product/res-mongoliana.jpg' },
+  { id:'orange-chicken', name:'ORANGE CHICKEN', image:'/img/product/orange-chicken.jpg' },
+  { id:'bbq-pork', name:'BBQ PORK', image:'/img/product/bbq-pork.jpg' },
+  { id:'res-cantonesa', name:'RES CANTONESA', image:'/img/product/res-cantonesa.jpg' },
+  { id:'sweet-sour-chicken', name:'SWEET & SOUR CHICKEN', image:'/img/product/sweet-sour-chicken.jpg' },
+  { id:'sweet-sour-pork', name:'SWEET & SOUR PORK', image:'/img/product/sweet-sour-pork.jpg' },
+  { id:'camaron-agridulce', name:'CAMARÓN AGRIDULCE', image:'/img/product/camaron-agridulce.jpg' },
+  { id:'kung-pao-chicken', name:'KUNG PAO CHICKEN', image:'/img/product/kung-pao-chicken.jpg' },
+  { id:'beef-broccoli', name:'BEEF & BROCCOLI', image:'/img/product/beef-broccoli.jpg' },
+  { id:'veggie-wok', name:'VEGGIE WOK', image:'/img/product/veggie-wok.jpg' },
 ]
 const PRODUCTOS = [
   { id:1, name:'Chi-nito 1', baseCount:1, guisados:1, price:95, desc:'Ideal para un antojo rápido.', image:'/img/product/chi-nito-1.jpg' },
@@ -49,18 +49,18 @@ const REFRESCO_SABORES = ['Coca-Cola','Coca-Cola Zero','Sprite','Fanta','Manzani
 
 const GUISADOS_PARA_LLEVAR = GUISADOS.map((g,index)=>({
   ...g,
-  halfPrice:[95,95,105,110,85,90,100,100,115][index],
-  literPrice:[175,175,195,205,155,165,185,185,215][index],
+  halfPrice:[95,110,115,100,110,145,100,115,85][index],
+  literPrice:[175,205,215,185,205,275,185,215,155][index],
   description:[
-    'Pollo con salsa cítrica de naranja.',
-    'Pollo en salsa dulce y ligeramente ácida.',
-    'Res salteada con brócoli y salsa de la casa.',
-    'Cerdo glaseado estilo BBQ chino.',
-    'Mezcla de verduras salteadas al wok.',
-    'Verduras salteadas en salsa oriental.',
-    'Pollo glaseado con salsa teriyaki.',
-    'Pollo con un toque picante y especias.',
-    'Res salteada en salsa dulce y especiada.',
+    'Pollo crujiente en salsa de naranja, ajo, jengibre, ajonjolí y cebollín.',
+    'Cerdo estilo chino-americano, glaseado con nuestra salsa BBQ y ligeramente caramelizado.',
+    'Res ligeramente crujiente con cebolla, pimientos, zanahoria y cebollín en salsa cantonesa oscura, brillante y dulce-salada.',
+    'Pollo crujiente con pimientos, cebolla y piña en salsa agridulce.',
+    'Cerdo crujiente con pimientos, cebolla y piña en salsa agridulce.',
+    'Camarones crujientes estilo bombochito, pimientos, cebolla y piña en salsa agridulce.',
+    'Pollo, vegetales, cacahuate, chile seco y salsa Kung Pao.',
+    'Res salteada con brócoli, zanahoria y cebolla en salsa de soya y ostión.',
+    'Brócoli, col, zanahoria, pimientos, cebolla, calabaza y ejotes salteados al wok.',
   ][index],
 }))
 
