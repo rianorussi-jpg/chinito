@@ -65,24 +65,15 @@ function App(){
 }
 
 function Home({onPick}){
+  const goToMenu=()=>document.getElementById('menu-chinito')?.scrollIntoView({behavior:'smooth',block:'start'})
   return <main>
-    <section className="hero">
-      <div className="hero-copy">
-        <span className="eyebrow">CHINESE COMFORT FOOD</span>
-        <h1>Arma tu <em>Chi-nito</em></h1>
-        <p>Bowls llenos de sabor, armados exactamente a tu manera.</p>
-        <div className="pickup-chip"><ShoppingBag size={18}/> Solo pickup · rápido, fácil y sin esperas</div>
-        <button className="primary big" onClick={()=>onPick(PRODUCTOS[2])}>Ordenar ahora <ChevronRight size={20}/></button>
-      </div>
-      <div className="hero-art">
-        <div className="mascot-circle"><img src="/logo.jpg" alt="Chi-nito"/></div>
-        <div className="food-card">🍜<span>Tu bowl. Tus reglas.</span></div>
-      </div>
+    <section className="home-hero-image" onClick={goToMenu} role="button" tabIndex={0} onKeyDown={(e)=>{if(e.key==='Enter'||e.key===' ') goToMenu()}} aria-label="Ver menú de Chi-nito">
+      <img src="/img/inicio.jpg" alt="Arma tu Chi-nito - Solo pickup" />
     </section>
 
     <section className="hours"><Clock3 size={21}/><div><b>Horario de atención</b><span>Lun - Dom · 11:00 a.m. - 9:00 p.m.</span></div></section>
 
-    <section className="section-wrap">
+    <section className="section-wrap" id="menu-chinito">
       <div className="section-head"><div><span className="eyebrow">ELIGE TU FAVORITO</span><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
       <div className="product-grid">{PRODUCTOS.map((p,i)=><article className="product-card" key={p.id}>
         <div className="product-visual">{['🥘','🍜','🥡'][i]}</div>
