@@ -1,25 +1,26 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
+import { supabase, supabaseConfigured } from './supabase'
 
 const BASES = [
-  { id:'frito', name:'Arroz frito', image:'/img/product/arroz-frito.jpg' },
-  { id:'chowmein', name:'Chow mein', image:'/img/product/chow-mein.jpg' },
+  { id:'frito', slug:'base-arroz-frito', name:'Arroz frito', image:'/img/product/arroz-frito.jpg' },
+  { id:'chowmein', slug:'base-chow-mein', name:'Chow mein', image:'/img/product/chow-mein.jpg' },
 ]
 const GUISADOS = [
-  { id:'orange-chicken', name:'ORANGE CHICKEN', image:'/img/product/orange-chicken.jpg' },
-  { id:'bbq-pork', name:'BBQ PORK', image:'/img/product/bbq-pork.jpg' },
-  { id:'res-cantonesa', name:'RES CANTONESA', image:'/img/product/res-cantonesa.jpg' },
-  { id:'sweet-sour-chicken', name:'SWEET & SOUR CHICKEN', image:'/img/product/sweet-sour-chicken.jpg' },
-  { id:'sweet-sour-pork', name:'SWEET & SOUR PORK', image:'/img/product/sweet-sour-pork.jpg' },
-  { id:'camaron-agridulce', name:'CAMARÓN AGRIDULCE', image:'/img/product/camaron-agridulce.jpg' },
-  { id:'kung-pao-chicken', name:'KUNG PAO CHICKEN', image:'/img/product/kung-pao-chicken.jpg' },
-  { id:'beef-broccoli', name:'BEEF & BROCCOLI', image:'/img/product/beef-broccoli.jpg' },
-  { id:'veggie-wok', name:'VEGGIE WOK', image:'/img/product/veggie-wok.jpg' },
+  { id:'orange-chicken', slug:'orange-chicken', name:'ORANGE CHICKEN', image:'/img/product/orange-chicken.jpg' },
+  { id:'bbq-pork', slug:'bbq-pork', name:'BBQ PORK', image:'/img/product/bbq-pork.jpg' },
+  { id:'res-cantonesa', slug:'res-cantonesa', name:'RES CANTONESA', image:'/img/product/res-cantonesa.jpg' },
+  { id:'sweet-sour-chicken', slug:'sweet-sour-chicken', name:'SWEET & SOUR CHICKEN', image:'/img/product/sweet-sour-chicken.jpg' },
+  { id:'sweet-sour-pork', slug:'sweet-sour-pork', name:'SWEET & SOUR PORK', image:'/img/product/sweet-sour-pork.jpg' },
+  { id:'camaron-agridulce', slug:'camaron-agridulce', name:'CAMARÓN AGRIDULCE', image:'/img/product/camaron-agridulce.jpg' },
+  { id:'kung-pao-chicken', slug:'kung-pao-chicken', name:'KUNG PAO CHICKEN', image:'/img/product/kung-pao-chicken.jpg' },
+  { id:'beef-broccoli', slug:'beef-broccoli', name:'BEEF & BROCCOLI', image:'/img/product/beef-broccoli.jpg' },
+  { id:'veggie-wok', slug:'veggie-wok', name:'VEGGIE WOK', image:'/img/product/veggie-wok.jpg' },
 ]
 const PRODUCTOS = [
-  { id:1, name:'Chi-nito 1', baseCount:1, guisados:1, price:95, desc:'Ideal para un antojo rápido.', image:'/img/product/chi-nito-1.jpg' },
-  { id:2, name:'Chi-nito 2', baseCount:1, guisados:2, price:115, desc:'El balance perfecto para comer bien.', image:'/img/product/chi-nito-2.jpg' },
-  { id:3, name:'Chi-nito 3', baseCount:1, guisados:3, price:135, desc:'El máximo de sabor en un solo bowl.', image:'/img/product/chi-nito-3.jpg' },
+  { id:1, slug:'chi-nito-1', name:'Chi-nito 1', baseCount:1, guisados:1, price:95, desc:'Ideal para un antojo rápido.', image:'/img/product/chi-nito-1.jpg' },
+  { id:2, slug:'chi-nito-2', name:'Chi-nito 2', baseCount:1, guisados:2, price:115, desc:'El balance perfecto para comer bien.', image:'/img/product/chi-nito-2.jpg' },
+  { id:3, slug:'chi-nito-3', name:'Chi-nito 3', baseCount:1, guisados:3, price:135, desc:'El máximo de sabor en un solo bowl.', image:'/img/product/chi-nito-3.jpg' },
 ]
 const EXTRAS = [
   { id:'te-helado', type:'Bebidas', name:'Té helado', price:35, image:'/img/product/te-helado.jpg' },
@@ -48,20 +49,26 @@ const EXTRAS = [
 ]
 
 const COMPLEMENTOS_HOME = [
-  { id:'chinito-bites-home', name:'CHI•NITO BITES', price:59, image:'/img/product/chinito-bites.jpg', desc:'140 g · Bocados de pollo crujiente con salsa Sweet Chili, ajonjolí y cebollín.' },
-  { id:'edamames-home', name:'EDAMAMES AL WOK', price:59, image:'/img/product/edamames-al-wok.jpg', desc:'120 g · Edamames salteados con soya, chile, ajonjolí y cebollín.' },
-  { id:'dumplings-home', name:'DUMPLINGS', price:59, image:'/img/product/dumplings.jpg', desc:'4 piezas · 120 g · Dumplings de cerdo y vegetales, dorados al wok.' },
-  { id:'wok-fries-home', name:'WOK FRIES', price:59, image:'/img/product/wok-fries.jpg', desc:'140 g · Papas crujientes terminadas al wok con salsa dulce-picante, ajo, ajonjolí y cebollín.' },
-  { id:'spring-rolls-home', name:'SPRING ROLLS', price:59, image:'/img/product/spring-rolls.jpg', desc:'3 piezas · 120 g · Rollitos primavera dorados y crujientes.' },
+  { id:'chinito-bites-home', catalogSlug:'chinito-bites', name:'CHI•NITO BITES', price:59, image:'/img/product/chinito-bites.jpg', desc:'140 g · Bocados de pollo crujiente con salsa Sweet Chili, ajonjolí y cebollín.' },
+  { id:'edamames-home', catalogSlug:'edamames-al-wok', name:'EDAMAMES AL WOK', price:59, image:'/img/product/edamames-al-wok.jpg', desc:'120 g · Edamames salteados con soya, chile, ajonjolí y cebollín.' },
+  { id:'dumplings-home', catalogSlug:'dumplings', name:'DUMPLINGS', price:59, image:'/img/product/dumplings.jpg', desc:'4 piezas · 120 g · Dumplings de cerdo y vegetales, dorados al wok.' },
+  { id:'wok-fries-home', catalogSlug:'wok-fries', name:'WOK FRIES', price:59, image:'/img/product/wok-fries.jpg', desc:'140 g · Papas crujientes terminadas al wok con salsa dulce-picante, ajo, ajonjolí y cebollín.' },
+  { id:'spring-rolls-home', catalogSlug:'spring-rolls', name:'SPRING ROLLS', price:59, image:'/img/product/spring-rolls.jpg', desc:'3 piezas · 120 g · Rollitos primavera dorados y crujientes.' },
 ]
 
 const BEBIDAS_HOME = [
-  { id:'te-casa-home', name:'Té de la casa', price:35, image:'/img/product/te-casa.jpg', mode:'qty' },
-  { id:'refresco-home', name:'Refresco', price:30, image:'/img/product/refresco.jpg', mode:'choose' },
-  { id:'agua-home', name:'Botella de agua', price:25, image:'/img/product/botella-agua.jpg', mode:'qty' },
+  { id:'te-casa-home', catalogSlug:'te-casa', name:'Té de la casa', price:35, image:'/img/product/te-casa.jpg', mode:'qty' },
+  { id:'refresco-home', catalogSlug:'coca-cola', name:'Refresco', price:30, image:'/img/product/refresco.jpg', mode:'choose' },
+  { id:'agua-home', catalogSlug:'agua', name:'Botella de agua', price:25, image:'/img/product/botella-agua.jpg', mode:'qty' },
 ]
 
-const REFRESCO_SABORES = ['Coca-Cola','Coca-Cola Zero','Sprite','Fanta','Manzanita']
+const REFRESCO_SABORES = [
+  {name:'Coca-Cola',slug:'coca-cola',image:'/img/product/coca-cola.jpg'},
+  {name:'Coca-Cola Zero',slug:'coca-cola-zero',image:'/img/product/coca-cola-zero.jpg'},
+  {name:'Sprite',slug:'sprite',image:'/img/product/sprite.jpg'},
+  {name:'Fanta',slug:'fanta',image:'/img/product/fanta.jpg'},
+  {name:'Manzanita',slug:'manzanita',image:'/img/product/manzanita.jpg'},
+]
 
 const GUISADOS_PARA_LLEVAR = GUISADOS.map((g,index)=>({
   ...g,
@@ -104,9 +111,38 @@ function App(){
   const [pickup,setPickup]=useState('Lo antes posible · 20–30 min')
   const [payment,setPayment]=useState('online')
   const [placed,setPlaced]=useState(false)
+  const [lastOrder,setLastOrder]=useState(null)
+  const [placing,setPlacing]=useState(false)
+  const [placeError,setPlaceError]=useState('')
+  const [catalog,setCatalog]=useState({})
+  const [storeSettings,setStoreSettings]=useState(null)
+
+  useEffect(()=>{
+    if(!supabase) return
+    let active=true
+    const loadCatalog=async()=>{
+      const [{data:menu},{data:settings}]=await Promise.all([
+        supabase.from('menu_items').select('*').order('sort_order',{ascending:true}),
+        supabase.from('store_settings').select('*').eq('id',1).maybeSingle(),
+      ])
+      if(!active) return
+      if(menu) setCatalog(Object.fromEntries(menu.map(item=>[item.slug,item])))
+      if(settings) setStoreSettings(settings)
+    }
+    loadCatalog()
+    const channel=supabase.channel('cliente-menu-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'menu_items'},loadCatalog)
+      .on('postgres_changes',{event:'*',schema:'public',table:'store_settings'},loadCatalog)
+      .subscribe()
+    return ()=>{active=false;supabase.removeChannel(channel)}
+  },[])
+
+  const isAvailable=(slug)=>catalog[slug]?.active !== false
+  const priceFor=(slug,fallback)=>Number(catalog[slug]?.price ?? fallback)
 
   const addProduct=(p)=>{
-    setProduct(p)
+    if(!isAvailable(p.slug)) return
+    setProduct({...p,price:priceFor(p.slug,p.price)})
     setBase(BASES[0])
     setGuisados([])
     setExtrasQty({})
@@ -114,6 +150,7 @@ function App(){
     window.scrollTo(0,0)
   }
   const toggleGuisado=(g)=>{
+    if(!isAvailable(g.slug||g.id)) return
     setGuisados(prev => prev.some(x=>x.id===g.id) ? prev.filter(x=>x.id!==g.id) : prev.length<product.guisados ? [...prev,g] : prev)
   }
   const changeExtraQty=(entry,delta)=>{
@@ -128,15 +165,15 @@ function App(){
       return {...prev,[entry.id]:{...entry,quantity:next}}
     })
   }
-  const ready=base && guisados.length>=1
+  const ready=base && guisados.length>=1 && isAvailable(product.slug) && isAvailable(base.slug) && guisados.every(g=>isAvailable(g.slug||g.id))
 
   const addConfiguredToCart=()=>{
     if(!ready) return
-    const selectedExtras = Object.values(extrasQty).map(extra=>({...extra}))
+    const selectedExtras = Object.values(extrasQty).filter(extra=>isAvailable(extra.id)).map(extra=>({...extra,price:priceFor(extra.id,extra.price),catalogSlug:extra.id}))
     const item={
       id:`${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
       kind:'configured',
-      product,
+      product:{...product,price:priceFor(product.slug,product.price)},
       base,
       guisados:[...guisados],
       extras:selectedExtras,
@@ -148,6 +185,9 @@ function App(){
   }
 
   const addSimpleItem=(entry)=>{
+    const catalogSlug=entry.catalogSlug || entry.refId.replace(/-home$/,'')
+    if(!isAvailable(catalogSlug)) return
+    entry={...entry,catalogSlug,price:priceFor(catalogSlug,entry.price)}
     const key=`${entry.kind}-${entry.refId}-${entry.variant || ''}`
     setCartItems(prev=>{
       const existing=prev.find(item=>item.cartKey===key)
@@ -170,10 +210,46 @@ function App(){
     const next=item.quantity+delta
     return next<=0?[]:[{...item,quantity:next}]
   }))
+  const placeOrder=async()=>{
+    setPlaceError('')
+    if(!supabaseConfigured || !supabase){setPlaceError('Falta conectar Supabase en Vercel.');return}
+    if(storeSettings && (!storeSettings.store_open || !storeSettings.pickup_enabled)){setPlaceError('La tienda no está recibiendo pedidos en este momento.');return}
+    if(!cartItems.length || !name.trim() || !phone.trim()) return
+    setPlacing(true)
+    const payload=cartItems.map(item=>{
+      if(item.kind==='configured') return {
+        kind:'configured',
+        catalog_slug:item.product.slug,
+        quantity:item.quantity,
+        base_slug:item.base.slug,
+        guisado_slugs:item.guisados.map(g=>g.slug||g.id),
+        extras:item.extras.map(e=>({catalog_slug:e.catalogSlug||e.id,quantity:e.quantity||1})),
+      }
+      return {
+        kind:item.kind,
+        catalog_slug:item.catalogSlug || item.refId?.replace(/-home$/,''),
+        quantity:item.quantity,
+        variant:item.variant || null,
+      }
+    })
+    const {data,error}=await supabase.rpc('create_customer_order',{
+      p_customer_name:name.trim(),
+      p_customer_phone:phone.trim(),
+      p_pickup_label:pickup,
+      p_payment_method:payment,
+      p_items:payload,
+    })
+    setPlacing(false)
+    if(error){setPlaceError(error.message || 'No pudimos crear el pedido.');return}
+    const created=Array.isArray(data)?data[0]:data
+    setLastOrder(created)
+    setPlaced(true)
+  }
+
   const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
   const cartTotal=useMemo(()=>cartItems.reduce((sum,item)=>sum+(itemUnitPrice(item)*item.quantity),0),[cartItems])
 
-  if(placed) return <Success onReset={()=>{setPlaced(false);setScreen('home');setCartItems([])}} />
+  if(placed) return <Success order={lastOrder} onReset={()=>{setPlaced(false);setLastOrder(null);setScreen('home');setCartItems([])}} />
 
   return <div className="app-shell">
     {screen!=='builder' && screen!=='cart' && <header className="topbar">
@@ -183,12 +259,12 @@ function App(){
     </header>}
 
     {screen==='home' && <>
-      <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} />
+      <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} catalog={catalog} />
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
       {cartOpen && <CartSheet items={cartItems} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={()=>{setCartOpen(false);setScreen('cart');window.scrollTo(0,0)}} />}
     </>}
-    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
-    {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={()=>setPlaced(true)} />}
+    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
+    {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
     {profileOpen && <ProfileDrawer
       isLoggedIn={isLoggedIn}
@@ -248,11 +324,17 @@ function ProfileDrawer({isLoggedIn,setIsLoggedIn,name,setName,phone,setPhone,ema
   </div>
 }
 
-function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
+function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog}){
   const [takeawaySize,setTakeawaySize]=useState('half')
   const [sodaOpen,setSodaOpen]=useState(false)
   const goToMenu=()=>document.getElementById('menu-chinito')?.scrollIntoView({behavior:'smooth',block:'start'})
   const variant=takeawaySize==='half'?'1/2 litro':'1 litro'
+  const available=(slug)=>catalog[slug]?.active !== false
+  const price=(slug,fallback)=>Number(catalog[slug]?.price ?? fallback)
+  const takeawayPrice=(item)=>{
+    const meta=catalog[item.slug]?.metadata || {}
+    return takeawaySize==='half' ? Number(meta.half_price ?? item.halfPrice) : Number(meta.liter_price ?? item.literPrice)
+  }
   return <main>
     <section className="home-hero-image" onClick={goToMenu} role="button" tabIndex={0} onKeyDown={(e)=>{if(e.key==='Enter'||e.key===' ') goToMenu()}} aria-label="Ver menú de Chi-nito">
       <img src="/img/inicio.jpg" alt="Arma tu Chi-nito - Solo pickup" />
@@ -260,12 +342,12 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
 
     <section className="section-wrap" id="menu-chinito">
       <div className="section-head"><div><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
-      <div className="product-grid">{PRODUCTOS.map((p)=><article className="product-card" key={p.id}>
+      <div className="product-grid">{PRODUCTOS.map((p)=>{const ok=available(p.slug);const pPrice=price(p.slug,p.price);return <article className={`product-card ${ok?'':'soldout-card'}`} key={p.id}>
         <div className="product-visual"><img src={p.image} alt={p.name}/></div>
-        <div className="badge">{p.guisados} guisado{p.guisados>1?'s':''}</div>
+        <div className="badge">{ok?`${p.guisados} guisado${p.guisados>1?'s':''}`:'Agotado'}</div>
         <h3>{p.name}</h3><p>1 base + {p.guisados} guisado{p.guisados>1?'s':''}</p><small>{p.desc}</small>
-        <div className="product-foot"><strong>Desde ${p.price}</strong><button onClick={()=>onPick(p)}>Elegir</button></div>
-      </article>)}</div>
+        <div className="product-foot"><strong>Desde ${pPrice}</strong><button disabled={!ok} onClick={()=>onPick({...p,price:pPrice})}>{ok?'Elegir':'Agotado'}</button></div>
+      </article>})}</div>
     </section>
 
     <section className="home-scroll-section complements-section">
@@ -273,15 +355,17 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
       <div className="home-card-scroller">
         {COMPLEMENTOS_HOME.map(item=>{
           const qty=getCartQty('addon',item.id)
-          return <article className="home-add-card" key={item.id}>
+          const ok=available(item.catalogSlug)
+          const itemPrice=price(item.catalogSlug,item.price)
+          return <article className={`home-add-card ${ok?'':'soldout-card'}`} key={item.id}>
             <div className="home-add-visual"><img src={item.image} alt={item.name}/></div>
             <div className="home-add-copy"><h3>{item.name}</h3>{item.desc&&<p>{item.desc}</p>}</div>
             <div className="home-add-actions">
-              <strong className="home-add-price">${item.price}</strong>
+              <strong className="home-add-price">${itemPrice}</strong>
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('addon',item.id)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
-                <button onClick={()=>onAddSimple({kind:'addon',refId:item.id,name:item.name,image:item.image,price:item.price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+                <button disabled={!ok} onClick={()=>onAddSimple({kind:'addon',refId:item.id,catalogSlug:item.catalogSlug,name:item.name,image:item.image,price:itemPrice})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
               </div>
             </div>
           </article>
@@ -299,17 +383,18 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
       </div>
       <div className="home-card-scroller">
         {GUISADOS_PARA_LLEVAR.map(item=>{
-          const price=takeawaySize==='half'?item.halfPrice:item.literPrice
+          const itemPrice=takeawayPrice(item)
+          const ok=available(item.slug)
           const qty=getCartQty('takeaway',item.id,variant)
-          return <article className="home-add-card" key={`${item.id}-${takeawaySize}`}>
+          return <article className={`home-add-card ${ok?'':'soldout-card'}`} key={`${item.id}-${takeawaySize}`}>
             <div className="home-add-visual takeaway"><img src={item.image} alt={item.name}/><small>{variant}</small></div>
             <div className="home-add-copy takeaway-copy"><h3>{item.name}</h3><p>{item.description}</p></div>
             <div className="home-add-actions">
-              <strong className="home-add-price">${price}</strong>
+              <strong className="home-add-price">${itemPrice}</strong>
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('takeaway',item.id,variant)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
-                <button onClick={()=>onAddSimple({kind:'takeaway',refId:item.id,variant,name:item.name,image:item.image,price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+                <button disabled={!ok} onClick={()=>onAddSimple({kind:'takeaway',refId:item.id,catalogSlug:item.slug,variant,name:item.name,image:item.image,price:itemPrice})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
               </div>
             </div>
           </article>
@@ -322,18 +407,20 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
       <div className="home-card-scroller">
         {BEBIDAS_HOME.map(item=>{
           const qty=getCartQty('drink',item.id)
-          return <article className="home-add-card" key={item.id}>
+          const ok=item.mode==='choose'?REFRESCO_SABORES.some(f=>available(f.slug)):available(item.catalogSlug)
+          const itemPrice=price(item.catalogSlug,item.price)
+          return <article className={`home-add-card ${ok?'':'soldout-card'}`} key={item.id}>
             <div className="home-add-visual"><img src={item.image} alt={item.name}/></div>
             <div className="home-add-copy"><h3>{item.name}</h3></div>
             {item.mode==='choose' ? <div className="home-add-actions drink-choose-actions">
-              <strong className="home-add-price">${item.price}</strong>
-              <button className="drink-choose-btn" onClick={()=>setSodaOpen(true)}>Elegir</button>
+              <strong className="home-add-price">${itemPrice}</strong>
+              <button disabled={!ok} className="drink-choose-btn" onClick={()=>setSodaOpen(true)}>{ok?'Elegir':'Agotado'}</button>
             </div> : <div className="home-add-actions">
-              <strong className="home-add-price">${item.price}</strong>
+              <strong className="home-add-price">${itemPrice}</strong>
               <div className="inline-qty">
                 <button onClick={()=>onRemoveSimple('drink',item.id)} disabled={!qty} aria-label={`Quitar ${item.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
-                <button onClick={()=>onAddSimple({kind:'drink',refId:item.id,name:item.name,image:item.image,price:item.price})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
+                <button disabled={!ok} onClick={()=>onAddSimple({kind:'drink',refId:item.id,catalogSlug:item.catalogSlug,name:item.name,image:item.image,price:itemPrice})} aria-label={`Agregar ${item.name}`}><Plus size={14}/></button>
               </div>
             </div>}
           </article>
@@ -347,13 +434,15 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
         <div className="soda-sheet-head"><div><small>REFRESCO</small><h2>Elige el sabor</h2></div><button className="cart-sheet-close" onClick={()=>setSodaOpen(false)} aria-label="Cerrar"><X size={22}/></button></div>
         <div className="soda-flavors">
           {REFRESCO_SABORES.map(flavor=>{
-            const qty=getCartQty('drink','refresco-home',flavor)
-            return <div className="soda-flavor-row" key={flavor}>
-              <div><img className="soda-product-image" src="/img/product/refresco.jpg" alt="Refresco"/><b>{flavor}</b></div>
+            const qty=getCartQty('drink','refresco-home',flavor.name)
+            const ok=available(flavor.slug)
+            const flavorPrice=price(flavor.slug,30)
+            return <div className={`soda-flavor-row ${ok?'':'soldout-card'}`} key={flavor.slug}>
+              <div><img className="soda-product-image" src={flavor.image} alt={flavor.name}/><b>{flavor.name}</b><small>${flavorPrice}</small></div>
               <div className="inline-qty soda-qty">
-                <button onClick={()=>onRemoveSimple('drink','refresco-home',flavor)} disabled={!qty} aria-label={`Quitar ${flavor}`}><Minus size={14}/></button>
+                <button onClick={()=>onRemoveSimple('drink','refresco-home',flavor.name)} disabled={!qty} aria-label={`Quitar ${flavor.name}`}><Minus size={14}/></button>
                 <b>{qty}</b>
-                <button onClick={()=>onAddSimple({kind:'drink',refId:'refresco-home',variant:flavor,name:'Refresco',image:'/img/product/refresco.jpg',price:30})} aria-label={`Agregar ${flavor}`}><Plus size={14}/></button>
+                <button disabled={!ok} onClick={()=>onAddSimple({kind:'drink',refId:'refresco-home',catalogSlug:flavor.slug,variant:flavor.name,name:flavor.name,image:flavor.image,price:flavorPrice})} aria-label={`Agregar ${flavor.name}`}><Plus size={14}/></button>
               </div>
             </div>
           })}
@@ -363,28 +452,30 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty}){
   </main>
 }
 
-function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extrasQty,changeExtraQty,ready,onBack,onAdd}){
+function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extrasQty,changeExtraQty,ready,onBack,onAdd,catalog}){
+  const available=(slug)=>catalog[slug]?.active !== false
+  const price=(slug,fallback)=>Number(catalog[slug]?.price ?? fallback)
   const guisadosSubtitle = product.guisados === 1 ? 'Selecciona 1 guisado' : `Selecciona de 1 a ${product.guisados} guisados`
-  const selectedExtras = Object.values(extrasQty)
-  const unitPrice=product.price+selectedExtras.reduce((s,e)=>s+(e.price*e.quantity),0)
+  const selectedExtras = Object.values(extrasQty).filter(e=>available(e.id)).map(e=>({...e,price:price(e.id,e.price)}))
+  const unitPrice=price(product.slug,product.price)+selectedExtras.reduce((s,e)=>s+(e.price*e.quantity),0)
   const customLine=[base?.name,...guisados.map(g=>g.name)].filter(Boolean).join(' · ')
   const extrasLine=selectedExtras.length?` + ${formatExtras(selectedExtras)}`:''
 
   return <main className="page builder-page">
     <div className="builder-topline"><button className="builder-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={22}/></button><h2>Personaliza tu Chi-nito</h2><span aria-hidden="true"></span></div>
-    <section className="summary-card"><div className="summary-food"><img src={product.image} alt={product.name}/></div><div><h3>{product.name}</h3><p>1 base + {product.guisados} guisados</p><span>{product.desc}</span></div><strong>${product.price}</strong></section>
+    <section className="summary-card"><div className="summary-food"><img src={product.image} alt={product.name}/></div><div><h3>{product.name}</h3><p>1 base + {product.guisados} guisados</p><span>{product.desc}</span></div><strong>${price(product.slug,product.price)}</strong></section>
 
     <Step num="1" title="Elige tu base" subtitle="Selecciona una opción">
-      <div className="choice-grid bases">{BASES.map(x=><button className={`choice ${base?.id===x.id?'selected':''}`} key={x.id} onClick={()=>setBase(x)}><img className="choice-emoji" src={x.image} alt={x.name}/><b>{x.name}</b>{base?.id===x.id&&<i><Check size={14}/></i>}</button>)}</div>
+      <div className="choice-grid bases">{BASES.map(x=>{const ok=available(x.slug);return <button disabled={!ok} className={`choice ${base?.id===x.id?'selected':''} ${ok?'':'soldout-choice'}`} key={x.id} onClick={()=>setBase(x)}><img className="choice-emoji" src={x.image} alt={x.name}/><b>{x.name}</b>{!ok&&<small>Agotado</small>}{base?.id===x.id&&ok&&<i><Check size={14}/></i>}</button>})}</div>
     </Step>
 
     <Step num="2" title="Elige tus guisados" subtitle={guisadosSubtitle}>
-      <div className="choice-grid guisos">{GUISADOS.map(x=>{const selected=guisados.some(g=>g.id===x.id); return <button className={`choice ${selected?'selected':''}`} key={x.id} onClick={()=>toggleGuisado(x)}><img className="choice-emoji" src={x.image} alt={x.name}/><b>{x.name}</b>{selected&&<i><Check size={14}/></i>}</button>})}</div>
+      <div className="choice-grid guisos">{GUISADOS.map(x=>{const selected=guisados.some(g=>g.id===x.id);const ok=available(x.slug); return <button disabled={!ok} className={`choice ${selected?'selected':''} ${ok?'':'soldout-choice'}`} key={x.id} onClick={()=>toggleGuisado(x)}><img className="choice-emoji" src={x.image} alt={x.name}/><b>{x.name}</b>{!ok&&<small>Agotado</small>}{selected&&ok&&<i><Check size={14}/></i>}</button>})}</div>
     </Step>
 
     <Step title="Agrega más a tu orden" subtitle="Opcional">
       <div className="tabs">{['Bebidas','Complementos','Extras'].map(t=><button key={t} onClick={()=>setTab(t)} className={tab===t?'active':''}>{t}</button>)}</div>
-      <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const qty=extrasQty[e.id]?.quantity || 0; return <article className={`extra-card ${qty>0?'selected':''}`} key={e.id}><img className="extra-card-image" src={e.image} alt={e.name}/><div className="extra-card-copy"><b>{e.name}</b>{e.weight&&<small>{e.weight}</small>}<strong>${e.price}</strong></div><div className="inline-qty extra-card-qty"><button onClick={()=>changeExtraQty(e,-1)} disabled={!qty} aria-label={`Quitar ${e.name}`}><Minus size={14}/></button><b>{qty}</b><button onClick={()=>changeExtraQty(e,1)} aria-label={`Agregar ${e.name}`}><Plus size={14}/></button></div></article>})}</div>
+      <div className="extras-grid">{EXTRAS.filter(e=>e.type===tab).map(e=>{const qty=extrasQty[e.id]?.quantity || 0;const ok=available(e.id);const item={...e,price:price(e.id,e.price)}; return <article className={`extra-card ${qty>0?'selected':''} ${ok?'':'soldout-card'}`} key={e.id}><img className="extra-card-image" src={e.image} alt={e.name}/><div className="extra-card-copy"><b>{e.name}</b>{e.weight&&<small>{e.weight}</small>}<strong>{ok?`$${item.price}`:'Agotado'}</strong></div><div className="inline-qty extra-card-qty"><button onClick={()=>changeExtraQty(item,-1)} disabled={!qty} aria-label={`Quitar ${e.name}`}><Minus size={14}/></button><b>{qty}</b><button disabled={!ok} onClick={()=>changeExtraQty(item,1)} aria-label={`Agregar ${e.name}`}><Plus size={14}/></button></div></article>})}</div>
     </Step>
 
     <div className="sticky-action builder-cart-bar">
@@ -442,7 +533,7 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
   </div>
 }
 
-function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onPlace}){
+function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onPlace,placing,placeError}){
   return <main className="page cart-page checkout-page">
     <div className="checkout-topline"><button className="checkout-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={21}/></button><h2>Checkout</h2><span aria-hidden="true" /></div>
 
@@ -474,10 +565,10 @@ function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,
 
     <section className="checkout-card"><div className="field-head"><CreditCard size={19}/><div><h3>Método de pago</h3><p>Selecciona una opción</p></div></div><div className="pay-grid"><button className={payment==='online'?'selected':''} onClick={()=>setPayment('online')}><CreditCard size={19}/><div><b>Pagar en línea</b><span>Tarjeta de crédito o débito</span></div></button><button className={payment==='pickup'?'selected':''} onClick={()=>setPayment('pickup')}><ShoppingBag size={19}/><div><b>Pagar al recoger</b><span>Efectivo o tarjeta</span></div></button></div></section>
 
-    <section className="total-box"><div><span>Total</span><strong>${total}</strong></div><button className="primary checkout-confirm" disabled={!items.length||!name||!phone} onClick={onPlace}>Confirmar pedido <ChevronRight size={18}/></button></section>
+    <section className="total-box"><div><span>Total</span><strong>${total}</strong></div>{placeError&&<p className="checkout-error">{placeError}</p>}<button className="primary checkout-confirm" disabled={!items.length||!name||!phone||placing} onClick={onPlace}>{placing?'Creando pedido…':'Confirmar pedido'} {!placing&&<ChevronRight size={18}/>}</button></section>
   </main>
 }
 
-function Success({onReset}){return <div className="success-screen"><div className="success-mark"><Check size={42}/></div><span className="eyebrow">PEDIDO CONFIRMADO</span><h1>¡Tu Chi-nito ya se está preparando!</h1><p>Pedido <b>#CN-1048</b>. Te avisaremos cuando esté listo para recoger.</p><div className="success-card"><span>Tiempo estimado</span><strong>20–30 min</strong><small>Solo pickup</small></div><button className="primary big" onClick={onReset}>Volver al inicio</button></div>}
+function Success({order,onReset}){return <div className="success-screen"><div className="success-mark"><Check size={42}/></div><span className="eyebrow">PEDIDO CONFIRMADO</span><h1>¡Tu pedido ya llegó a cocina!</h1><p>Pedido <b>{order?.order_number||'confirmado'}</b>. Kitchen Mode lo recibió en tiempo real.</p><div className="success-card"><span>Total</span><strong>${Number(order?.total||0)}</strong><small>Solo pickup</small></div><button className="primary big" onClick={onReset}>Volver al inicio</button></div>}
 
 export default App
