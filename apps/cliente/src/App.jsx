@@ -138,6 +138,9 @@ function App(){
   const [lastOrder,setLastOrder]=useState(null)
   const [placing,setPlacing]=useState(false)
   const [placeError,setPlaceError]=useState('')
+  const [cashbackBalance,setCashbackBalance]=useState(0)
+  const [cashbackLoading,setCashbackLoading]=useState(false)
+  const [redeemCashback,setRedeemCashback]=useState(false)
   const [catalog,setCatalog]=useState({})
   const [catalogRows,setCatalogRows]=useState(null)
   const [storeSettings,setStoreSettings]=useState(null)
@@ -187,6 +190,27 @@ function App(){
     loadCustomer()
     return ()=>{cancelled=true}
   },[session?.user?.id])
+
+  // El saldo es exclusivamente el registrado en Supabase; nunca se calcula ni edita localmente.
+  useEffect(()=>{
+    const userId=session?.user?.id
+    if(!supabase||!userId){setCashbackBalance(0);setRedeemCashback(false);return}
+    let active=true
+    const refresh=async()=>{
+      setCashbackLoading(true)
+      const {data,error}=await supabase.from('customer_cashback_wallets')
+        .select('balance').eq('customer_id',userId).maybeSingle()
+      if(!active)return
+      if(error){console.warn('No se pudo consultar el cashback:',error.message)}
+      else setCashbackBalance(Math.max(0,Number(data?.balance||0)))
+      setCashbackLoading(false)
+    }
+    refresh()
+    const channel=supabase.channel(`cashback-customer-${userId}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'customer_cashback_wallets',filter:`customer_id=eq.${userId}`},refresh)
+      .subscribe()
+    return ()=>{active=false;supabase.removeChannel(channel)}
+  },[session?.user?.id,profileOpen,screen])
 
   // Si el usuario inició sesión para comprar, lo llevamos al checkout.
   useEffect(()=>{
@@ -324,7 +348,7 @@ function App(){
     if(!supabaseConfigured || !supabase){setPlaceError('Falta conectar Supabase en Vercel.');return}
     if(storeSettings && (!storeSettings.store_open || !storeSettings.pickup_enabled)){setPlaceError('La tienda no está recibiendo pedidos en este momento.');return}
     if(!session?.user){setPlaceError('Inicia sesión para confirmar tu pedido.');setScreen('home');setAuthIntent('checkout');setProfileOpen(true);return}
-    if(!cartItems.length || !name.trim() || !phone.trim()) return
+    if(!cartItems.length || !name.trim() || !phone.trim()){setPlaceError('Completa tu perfil antes de realizar el pedido.');return}
     setPlacing(true)
     const payload=cartItems.map(item=>{
       if(item.kind==='configured') return {
@@ -342,17 +366,19 @@ function App(){
         variant:item.variant || null,
       }
     })
-    const {data,error}=await supabase.rpc('create_customer_order',{
-      p_customer_name:name.trim(),
-      p_customer_phone:phone.trim(),
+    const discount=redeemCashback?Math.round(Math.min(cashbackBalance,cartTotal)*100)/100:0
+    const {data,error}=await supabase.rpc('create_customer_order_with_cashback',{
       p_pickup_label:pickup,
       p_payment_method:payment,
       p_items:payload,
+      p_cashback_to_use:discount,
     })
     setPlacing(false)
     if(error){setPlaceError(error.message || 'No pudimos crear el pedido.');return}
     const created=Array.isArray(data)?data[0]:data
     setLastOrder(created)
+    setCashbackBalance(Math.max(0,Number(created?.cashback_balance||0)))
+    setRedeemCashback(false)
     setPlaced(true)
   }
 
@@ -365,6 +391,7 @@ function App(){
   }),[cartItems,catalog])
   const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
   const cartTotal=useMemo(()=>displayCart.reduce((sum,item)=>sum+(itemUnitPrice(item)*item.quantity),0),[displayCart])
+  const cashbackDiscount=redeemCashback?Math.round(Math.min(cashbackBalance,cartTotal)*100)/100:0
 
   if(placed) return <Success order={lastOrder} onReset={()=>{setPlaced(false);setLastOrder(null);setScreen('home');setCartItems([])}} />
 
@@ -382,13 +409,15 @@ function App(){
     </>}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='cart' && !session?.user && authReady && <div className="auth-checkout-gate"><p>Inicia sesión para continuar con tu pedido.</p><button className="primary" onClick={()=>{setScreen('home');setAuthIntent('checkout');setProfileOpen(true)}}>Iniciar sesión</button></div>}
-    {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
+    {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
     {profileOpen && <ProfileDrawer
       session={session}
       intent={authIntent}
       name={name}
       phone={phone}
+      cashbackBalance={cashbackBalance}
+      cashbackLoading={cashbackLoading}
       onSave={saveCustomerProfile}
       onClose={()=>{setProfileOpen(false);setAuthIntent('profile')}}
       onAuthenticated={()=>{setProfileOpen(false);if(authIntent==='checkout'){setAuthIntent('profile');setScreen('cart');window.scrollTo(0,0)}}}
@@ -607,7 +636,7 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
   </div>
 }
 
-function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,setPayment,onBack,onPlace,placing,placeError}){
+function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,onBack,onPlace,placing,placeError}){
   return <main className="page cart-page checkout-page">
     <div className="checkout-topline"><button className="checkout-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={21}/></button><h2>Checkout</h2><span aria-hidden="true" /></div>
 
@@ -635,11 +664,17 @@ function Cart({items,total,pickup,setPickup,name,setName,phone,setPhone,payment,
 
     <section className="checkout-card"><div className="field-head"><Clock3 size={19}/><div><h3>Hora de pickup</h3><p>Selecciona tu hora</p></div></div><select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 20–30 min</option><option>Hoy, 7:00 p.m.</option><option>Hoy, 7:30 p.m.</option><option>Hoy, 8:00 p.m.</option></select></section>
 
-    <section className="checkout-card"><div className="field-head"><UserRound size={19}/><div><h3>Tus datos</h3><p>Para identificar tu pedido</p></div></div><div className="inputs"><input placeholder="Nombre completo" value={name} onChange={e=>setName(e.target.value)}/><input placeholder="Teléfono" value={phone} onChange={e=>setPhone(e.target.value)}/></div></section>
+    <section className="checkout-card"><div className="field-head"><UserRound size={19}/><div><h3>Tus datos</h3><p>Datos de tu perfil para identificar el pedido</p></div></div><div className="inputs checkout-readonly-fields"><div><small>Nombre completo</small><strong>{name||'Completa tu perfil'}</strong></div><div><small>Teléfono</small><strong>{phone||'Completa tu perfil'}</strong></div></div></section>
+
+    <section className="checkout-card cashback-checkout-card"><div className="field-head"><span className="cashback-icon">$</span><div><h3>Tu cashback</h3><p>Acumula $1 por cada $10 al completar tu pedido</p></div></div>
+      <div className="cashback-checkout-row"><div><small>Saldo disponible</small><strong>${cashbackBalance.toFixed(2)}</strong></div><label className="cashback-toggle"><input type="checkbox" checked={redeemCashback&&cashbackBalance>0} onChange={e=>setRedeemCashback(e.target.checked)} disabled={cashbackLoading||cashbackBalance<=0||total<=0}/><span>Usar cashback en este pedido</span></label></div>
+      {cashbackDiscount>0&&<p className="cashback-preview">Se descontarán ${cashbackDiscount.toFixed(2)} de tu pedido.</p>}
+      {cashbackLoading&&<small className="cashback-hint">Actualizando saldo…</small>}
+    </section>
 
     <section className="checkout-card"><div className="field-head"><CreditCard size={19}/><div><h3>Método de pago</h3><p>Selecciona una opción</p></div></div><div className="pay-grid"><button className={payment==='online'?'selected':''} onClick={()=>setPayment('online')}><CreditCard size={19}/><div><b>Pagar en línea</b><span>Tarjeta de crédito o débito</span></div></button><button className={payment==='pickup'?'selected':''} onClick={()=>setPayment('pickup')}><ShoppingBag size={19}/><div><b>Pagar al recoger</b><span>Efectivo o tarjeta</span></div></button></div></section>
 
-    <section className="total-box"><div><span>Total</span><strong>${total}</strong></div>{placeError&&<p className="checkout-error">{placeError}</p>}<button className="primary checkout-confirm" disabled={!items.length||!name||!phone||placing} onClick={onPlace}>{placing?'Creando pedido…':'Confirmar pedido'} {!placing&&<ChevronRight size={18}/>}</button></section>
+    <section className="total-box">{cashbackDiscount>0&&<><div className="cashback-total-line"><span>Subtotal</span><span>${total.toFixed(2)}</span></div><div className="cashback-total-line"><span>Cashback aplicado</span><span>−${cashbackDiscount.toFixed(2)}</span></div></>}<div><span>Total</span><strong>${(total-cashbackDiscount).toFixed(2)}</strong></div>{placeError&&<p className="checkout-error">{placeError}</p>}<button className="primary checkout-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading} onClick={onPlace}>{placing?'Creando pedido…':'Confirmar pedido'} {!placing&&<ChevronRight size={18}/>}</button></section>
   </main>
 }
 

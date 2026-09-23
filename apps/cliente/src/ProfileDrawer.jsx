@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check, UserRound, X } from 'lucide-react'
+import { ArrowLeft, Check, Pencil, UserRound, X } from 'lucide-react'
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js'
 import { supabase, supabaseConfigured } from './supabase'
 
@@ -32,7 +32,7 @@ const splitPhone=(saved)=>{
 function PhoneField({country,onCountry,number,onNumber,idPrefix}){
   return <div className="auth-phone-row">
     <select aria-label="País y código telefónico" value={country} onChange={e=>onCountry(e.target.value)} id={`${idPrefix}-country`}>
-      {sortedCountries.map(c=><option key={c.code} value={c.code}>{flag(c.code)} +{c.dial} · {c.label}</option>)}
+      {sortedCountries.map(c=><option key={c.code} value={c.code}>{flag(c.code)} +{c.dial}</option>)}
     </select>
     <input type="tel" inputMode="tel" autoComplete="tel-national" value={number}
       onChange={e=>onNumber(e.target.value.replace(/[^0-9\s()-]/g,''))}
@@ -40,8 +40,9 @@ function PhoneField({country,onCountry,number,onNumber,idPrefix}){
   </div>
 }
 
-export default function ProfileDrawer({session,intent,name,phone,onSave,onClose,onAuthenticated}){
+export default function ProfileDrawer({session,intent,name,phone,cashbackBalance=0,cashbackLoading=false,onSave,onClose,onAuthenticated}){
   const [view,setView]=useState('login')
+  const [editingProfile,setEditingProfile]=useState(false)
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
   const [fullName,setFullName]=useState('')
@@ -51,6 +52,7 @@ export default function ProfileDrawer({session,intent,name,phone,onSave,onClose,
   const [phoneCountry,setPhoneCountry]=useState('MX')
   const [phoneNumber,setPhoneNumber]=useState('')
   const [profileName,setProfileName]=useState(name||'')
+  const [profileEmail,setProfileEmail]=useState(session?.user?.email||'')
   const [profilePhone,setProfilePhone]=useState(()=>splitPhone(phone))
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
@@ -58,7 +60,7 @@ export default function ProfileDrawer({session,intent,name,phone,onSave,onClose,
   const signedIn=!!session?.user
   const phonePreview=useMemo(()=>normalizedPhone(phoneCountry,phoneNumber),[phoneCountry,phoneNumber])
 
-  useEffect(()=>{setProfileName(name||'');setProfilePhone(splitPhone(phone))},[name,phone,session?.user?.id])
+  useEffect(()=>{setProfileName(name||'');setProfilePhone(splitPhone(phone));setProfileEmail(session?.user?.email||'')},[name,phone,session?.user?.id,session?.user?.email])
   useEffect(()=>{
     const key=(e)=>{if(e.key==='Escape'&&!busy)onClose()}
     window.addEventListener('keydown',key)
@@ -112,10 +114,17 @@ export default function ProfileDrawer({session,intent,name,phone,onSave,onClose,
     e.preventDefault();clearMessages()
     if(profileName.trim().length<2){setError('Escribe tu nombre completo.');return}
     if(!validPhone(profilePhone.country,profilePhone.number)){setError('Introduce un número de teléfono válido.');return}
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileEmail.trim())){setError('Escribe un correo electrónico válido.');return}
     setBusy(true)
     try{
       await onSave({fullName:profileName,phoneNumber:normalizedPhone(profilePhone.country,profilePhone.number)})
-      setNotice('Tus datos se guardaron correctamente.')
+      const nextEmail=profileEmail.trim().toLowerCase()
+      if(nextEmail!==String(session.user.email||'').toLowerCase()){
+        const {error:emailError}=await supabase.auth.updateUser({email:nextEmail},{emailRedirectTo:window.location.origin+window.location.pathname})
+        if(emailError)throw emailError
+        setNotice('Datos guardados. Revisa tu correo para confirmar el cambio de dirección.')
+      }else{setNotice('Tus datos se guardaron correctamente.')}
+      setEditingProfile(false)
     }catch(err){setError(err.message||'No pudimos guardar tus cambios.')}
     finally{setBusy(false)}
   }
@@ -146,16 +155,27 @@ export default function ProfileDrawer({session,intent,name,phone,onSave,onClose,
           <div className="profile-drawer-avatar"><UserRound size={30}/></div>
           <div><b>{name||'Cliente Chi-nito'}</b><span>{session.user.email}</span></div>
         </div>
-        <form className="profile-drawer-fields" onSubmit={saveProfile}>
-          <label>Nombre completo<input value={profileName} onChange={e=>setProfileName(e.target.value)} autoComplete="name" required /></label>
-          <label>Teléfono
-            <PhoneField idPrefix="profile" country={profilePhone.country} number={profilePhone.number}
-              onCountry={country=>setProfilePhone(prev=>({...prev,country}))}
-              onNumber={number=>setProfilePhone(prev=>({...prev,number}))}/>
-          </label>
-          <label>Correo electrónico<input value={session.user.email||''} readOnly aria-label="Correo electrónico de la cuenta" /></label>
-          <button className="primary profile-drawer-save" type="submit" disabled={busy}>{busy?'Guardando…':'Guardar cambios'}</button>
-        </form>
+        {!editingProfile ? <>
+          <div className="profile-static-info">
+            <div><small>Nombre completo</small><strong>{name||'Sin registrar'}</strong></div>
+            <div><small>Número de teléfono</small><strong>{phone||'Sin registrar'}</strong></div>
+            <div><small>Correo electrónico</small><strong>{session.user.email||'Sin registrar'}</strong></div>
+            <div className="profile-cashback-balance"><small>Cashback</small><strong>{cashbackLoading?'Consultando…':`$${cashbackBalance.toFixed(2)}`}</strong><span>Recibes $1 por cada $10 al completar un pedido.</span></div>
+          </div>
+          <button className="profile-drawer-edit" type="button" onClick={()=>{clearMessages();setProfileName(name||'');setProfilePhone(splitPhone(phone));setProfileEmail(session.user.email||'');setEditingProfile(true)}}><Pencil size={15}/> Editar perfil</button>
+        </> : <>
+          <button className="auth-back" onClick={()=>{clearMessages();setEditingProfile(false)}} type="button"><ArrowLeft size={15}/> Volver a mi perfil</button>
+          <form className="profile-drawer-fields" onSubmit={saveProfile}>
+            <label>Nombre completo<input value={profileName} onChange={e=>setProfileName(e.target.value)} autoComplete="name" required /></label>
+            <label>Teléfono
+              <PhoneField idPrefix="profile" country={profilePhone.country} number={profilePhone.number}
+                onCountry={country=>setProfilePhone(prev=>({...prev,country}))}
+                onNumber={number=>setProfilePhone(prev=>({...prev,number}))}/>
+            </label>
+            <label>Correo electrónico<input type="email" value={profileEmail} onChange={e=>setProfileEmail(e.target.value)} autoComplete="email" required /></label>
+            <button className="primary profile-drawer-save" type="submit" disabled={busy}>{busy?'Guardando…':'Guardar cambios'}</button>
+          </form>
+        </>}
         <button className="profile-drawer-logout" onClick={logout} type="button" disabled={busy}>Cerrar sesión</button>
       </> : view==='login' ? <>
         <div className="profile-drawer-intro">

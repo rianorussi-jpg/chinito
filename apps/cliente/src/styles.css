@@ -1347,3 +1347,35 @@
 .auth-checkout-gate{max-width:480px;margin:40px auto;padding:20px;text-align:center}
 .auth-checkout-gate p{font-size:13px}
 @media(max-width:800px){.auth-drawer{width:82vw;max-width:370px;padding-bottom:max(22px,env(safe-area-inset-bottom))}.auth-phone-row{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}}
+
+/* Perfil: lectura por defecto, edición explícita y cashback. */
+.profile-static-info{display:grid;gap:9px;margin:8px 0 16px}
+.profile-static-info>div{padding:11px 12px;background:#f8f3ee;border:1px solid #f1e6dd;border-radius:12px;min-width:0}
+.profile-static-info small,.profile-static-info strong,.profile-static-info span{display:block}
+.profile-static-info small{font-size:10px;color:#776c65;margin-bottom:3px}
+.profile-static-info strong{font-size:12px;color:#161313;overflow-wrap:anywhere}
+.profile-static-info .profile-cashback-balance{border-color:#f0d6d6;background:#fff5f1}
+.profile-static-info .profile-cashback-balance strong{font-size:23px;color:var(--red)}
+.profile-static-info .profile-cashback-balance span{font-size:10px;color:#776c65;margin-top:4px;line-height:1.4}
+.profile-drawer-edit{border:0;background:#161313;color:#fff;border-radius:12px;padding:13px;width:100%;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+/* País compacto: bandera + prefijo, sin nombre. Los demás dígitos tienen espacio. */
+.auth-drawer .auth-phone-row{grid-template-columns:95px minmax(0,1fr);gap:7px}
+.auth-drawer .auth-phone-row select{width:95px;max-width:95px;font-size:11px;padding:7px 4px;min-width:0}
+.auth-drawer .auth-phone-row input{min-width:0;flex:1}
+@media(max-width:800px){.auth-drawer .auth-phone-row{grid-template-columns:88px minmax(0,1fr)}.auth-drawer .auth-phone-row select{width:88px;max-width:88px}}
+/* Checkout: perfil de solo lectura y uso voluntario de cashback. */
+.checkout-readonly-fields>div{display:grid;gap:4px;min-width:0;padding:10px 11px;border:1px solid #e9dfd6;background:#faf5f0;border-radius:12px}
+.checkout-readonly-fields small{font-size:10px;color:#756b65}
+.checkout-readonly-fields strong{font-size:12px;color:#171313;overflow-wrap:anywhere}
+.cashback-icon{display:grid;place-items:center;width:30px;height:30px;background:#e71922;color:#fff;border-radius:50%;font-weight:900;font-size:16px;flex-shrink:0}
+.cashback-checkout-row{display:flex;align-items:center;justify-content:space-between;gap:13px;padding:10px 0}
+.cashback-checkout-row>div small,.cashback-checkout-row>div strong{display:block}
+.cashback-checkout-row>div small{font-size:10px;color:#756b65}
+.cashback-checkout-row>div strong{color:var(--red);font-size:19px;margin-top:2px}
+.cashback-toggle{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:750;cursor:pointer;max-width:185px;line-height:1.35}
+.cashback-toggle input{accent-color:var(--red);width:17px;height:17px;flex:0 0 17px}
+.cashback-preview{margin:2px 0 5px;font-size:11px;color:#16814b;font-weight:750}
+.cashback-hint{font-size:10px;color:#756b65}
+.total-box .cashback-total-line{margin-bottom:5px}
+.total-box .cashback-total-line span{font-size:12px;font-weight:600;color:#756b65}
+@media(max-width:390px){.cashback-checkout-row{flex-wrap:wrap}.cashback-toggle{max-width:none}}
