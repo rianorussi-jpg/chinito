@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
+import ProfileDrawer from './ProfileDrawer'
 
 const BASES = [
   { id:'frito', slug:'base-arroz-frito', name:'Arroz frito', image:'/img/product/arroz-frito.jpg' },
@@ -125,9 +126,9 @@ function App(){
   const [extrasQty,setExtrasQty]=useState({})
   const [cartOpen,setCartOpen]=useState(false)
   const [profileOpen,setProfileOpen]=useState(false)
-  const [isLoggedIn,setIsLoggedIn]=useState(false)
-  const [email,setEmail]=useState('')
-  const [password,setPassword]=useState('')
+  const [session,setSession]=useState(null)
+  const [authReady,setAuthReady]=useState(!supabaseConfigured)
+  const [authIntent,setAuthIntent]=useState('profile')
   const [cartItems,setCartItems]=useState([])
   const [name,setName]=useState('')
   const [phone,setPhone]=useState('')
@@ -140,6 +141,82 @@ function App(){
   const [catalog,setCatalog]=useState({})
   const [catalogRows,setCatalogRows]=useState(null)
   const [storeSettings,setStoreSettings]=useState(null)
+
+  // Una sola sesión de Supabase Auth para toda la app, con renovación automática.
+  // getSession recupera la sesión guardada al abrir o recargar la página.
+  useEffect(()=>{
+    if(!supabase) return
+    let mounted=true
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,current)=>{
+      if(!mounted) return
+      setSession(current)
+      if(_event==='SIGNED_OUT'){setName('');setPhone('')}
+      setAuthReady(true)
+    })
+    supabase.auth.getSession().then(({data,error})=>{
+      if(!mounted) return
+      setSession(data?.session||null)
+      setAuthReady(true)
+      if(error) console.warn('No se pudo recuperar la sesión:',error.message)
+    }).catch(()=>{if(mounted)setAuthReady(true)})
+    return ()=>{mounted=false;subscription.unsubscribe()}
+  },[])
+
+  // Los datos del cliente se guardan por usuario, no únicamente en el navegador.
+  useEffect(()=>{
+    const user=session?.user
+    if(!supabase||!user?.id)return
+    let cancelled=false
+    const loadCustomer=async()=>{
+      const {data,error}=await supabase.from('customer_profiles')
+        .select('full_name,phone').eq('id',user.id).maybeSingle()
+      if(cancelled)return
+      if(error) console.warn('No se pudo cargar el perfil:',error.message)
+      const fallbackName=user.user_metadata?.full_name||''
+      const fallbackPhone=user.user_metadata?.phone_e164||''
+      const fullName=data?.full_name||fallbackName
+      const customerPhone=data?.phone||fallbackPhone
+      setName(fullName)
+      setPhone(customerPhone)
+      if(!data && (fullName||customerPhone)){
+        const {error:saveError}=await supabase.from('customer_profiles')
+          .upsert({id:user.id,full_name:fullName,phone:customerPhone},{onConflict:'id'})
+        if(saveError)console.warn('No se pudo crear el perfil:',saveError.message)
+      }
+    }
+    loadCustomer()
+    return ()=>{cancelled=true}
+  },[session?.user?.id])
+
+  // Si el usuario inició sesión para comprar, lo llevamos al checkout.
+  useEffect(()=>{
+    if(authIntent!=='checkout'||!session?.user||!authReady)return
+    setProfileOpen(false)
+    setCartOpen(false)
+    setAuthIntent('profile')
+    setScreen('cart')
+    window.scrollTo(0,0)
+  },[authIntent,session?.user?.id,authReady])
+
+  const continueToCheckout=()=>{
+    if(!authReady)return
+    setCartOpen(false)
+    if(session?.user){setScreen('cart');window.scrollTo(0,0);return}
+    setAuthIntent('checkout')
+    setProfileOpen(true)
+  }
+
+  const saveCustomerProfile=async({fullName,phoneNumber})=>{
+    if(!supabase||!session?.user?.id)throw new Error('Inicia sesión para guardar tus datos.')
+    const {error}=await supabase.from('customer_profiles').upsert({
+      id:session.user.id,full_name:fullName.trim(),phone:phoneNumber,
+    },{onConflict:'id'})
+    if(error)throw error
+    setName(fullName.trim());setPhone(phoneNumber)
+    const {error:metadataError}=await supabase.auth.updateUser({data:{full_name:fullName.trim(),phone_e164:phoneNumber}})
+    if(metadataError)console.warn('El perfil se guardó, pero no se actualizó la copia de respaldo:',metadataError.message)
+  }
+
 
   useEffect(()=>{
     if(!supabase) return
@@ -246,6 +323,7 @@ function App(){
     setPlaceError('')
     if(!supabaseConfigured || !supabase){setPlaceError('Falta conectar Supabase en Vercel.');return}
     if(storeSettings && (!storeSettings.store_open || !storeSettings.pickup_enabled)){setPlaceError('La tienda no está recibiendo pedidos en este momento.');return}
+    if(!session?.user){setPlaceError('Inicia sesión para confirmar tu pedido.');setScreen('home');setAuthIntent('checkout');setProfileOpen(true);return}
     if(!cartItems.length || !name.trim() || !phone.trim()) return
     setPlacing(true)
     const payload=cartItems.map(item=>{
@@ -292,7 +370,7 @@ function App(){
 
   return <div className="app-shell">
     {screen!=='builder' && screen!=='cart' && <header className="topbar">
-      <button className="icon-btn profile-btn" onClick={()=>setProfileOpen(true)} aria-label="Ver perfil"><UserRound size={23}/></button>
+      <button className="icon-btn profile-btn" onClick={()=>{setAuthIntent('profile');setProfileOpen(true)}} aria-label="Ver perfil"><UserRound size={23}/></button>
       <div className="brand-mini" onClick={()=>setScreen('home')}><img src="/logo.jpg" alt="Chi-nito"/></div>
       <div className="topbar-spacer" aria-hidden="true" />
     </header>}
@@ -300,66 +378,21 @@ function App(){
     {screen==='home' && <>
       <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} catalog={catalog} menuData={clientMenu} />
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
-      {cartOpen && <CartSheet items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={()=>{setCartOpen(false);setScreen('cart');window.scrollTo(0,0)}} />}
+      {cartOpen && <CartSheet items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
     </>}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
-    {screen==='cart' && <Cart items={displayCart} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
+    {screen==='cart' && !session?.user && authReady && <div className="auth-checkout-gate"><p>Inicia sesión para continuar con tu pedido.</p><button className="primary" onClick={()=>{setScreen('home');setAuthIntent('checkout');setProfileOpen(true)}}>Iniciar sesión</button></div>}
+    {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
     {profileOpen && <ProfileDrawer
-      isLoggedIn={isLoggedIn}
-      setIsLoggedIn={setIsLoggedIn}
+      session={session}
+      intent={authIntent}
       name={name}
-      setName={setName}
       phone={phone}
-      setPhone={setPhone}
-      email={email}
-      setEmail={setEmail}
-      password={password}
-      setPassword={setPassword}
-      onClose={()=>setProfileOpen(false)}
+      onSave={saveCustomerProfile}
+      onClose={()=>{setProfileOpen(false);setAuthIntent('profile')}}
+      onAuthenticated={()=>{setProfileOpen(false);if(authIntent==='checkout'){setAuthIntent('profile');setScreen('cart');window.scrollTo(0,0)}}}
     />}
-  </div>
-}
-
-function ProfileDrawer({isLoggedIn,setIsLoggedIn,name,setName,phone,setPhone,email,setEmail,password,setPassword,onClose}){
-  const login=()=>{
-    if(!email.trim()) return
-    if(!name.trim()) setName(email.split('@')[0] || 'Cliente')
-    setIsLoggedIn(true)
-  }
-  return <div className="profile-drawer-overlay" onClick={onClose} role="presentation">
-    <aside className="profile-drawer" onClick={e=>e.stopPropagation()} aria-label="Cuenta y perfil">
-      <div className="profile-drawer-head">
-        <div><small>MI CUENTA</small><h2>{isLoggedIn?'Tu perfil':'Bienvenido'}</h2></div>
-        <button className="profile-drawer-close" onClick={onClose} aria-label="Cerrar"><X size={22}/></button>
-      </div>
-
-      {isLoggedIn ? <>
-        <div className="profile-drawer-user">
-          <div className="profile-drawer-avatar"><UserRound size={30}/></div>
-          <div><b>{name || 'Cliente Chi-nito'}</b><span>{email || 'Sesión iniciada'}</span></div>
-        </div>
-        <div className="profile-drawer-fields">
-          <label>Nombre completo<input value={name} onChange={e=>setName(e.target.value)} placeholder="Tu nombre" /></label>
-          <label>Teléfono<input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Tu teléfono" inputMode="tel" /></label>
-          <label>Correo electrónico<input value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com" inputMode="email" /></label>
-        </div>
-        <button className="primary profile-drawer-save" onClick={onClose}>Guardar cambios</button>
-        <button className="profile-drawer-logout" onClick={()=>setIsLoggedIn(false)}>Cerrar sesión</button>
-      </> : <>
-        <div className="profile-drawer-intro">
-          <div className="profile-drawer-avatar"><UserRound size={30}/></div>
-          <p>Inicia sesión para guardar tus datos y agilizar tus pedidos de pickup.</p>
-        </div>
-        <div className="profile-drawer-fields">
-          <label>Correo electrónico<input value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com" inputMode="email" /></label>
-          <label>Contraseña<input value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" type="password" /></label>
-        </div>
-        <button className="primary profile-drawer-save" onClick={login}>Iniciar sesión</button>
-        <button className="profile-drawer-link" type="button">Crear una cuenta</button>
-        <p className="profile-drawer-note">También puedes hacer tu pedido sin iniciar sesión.</p>
-      </>}
-    </aside>
   </div>
 }
 
