@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BarChart3, CheckCircle2, Clock3, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed } from 'lucide-react'
+import { BarChart3, CheckCircle2, Clock3, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, X, ImagePlus } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
@@ -79,7 +79,7 @@ export default function App(){
   <main><header><div><span className="eyebrow">ADMINISTRACIÓN</span><h1>{section}</h1></div><div className="live"><i/> {loading?'Actualizando…':'Supabase conectado'}</div></header>
    {section==='Resumen'&&<Dashboard orders={orders} active={active} settings={settings} setSection={setSection}/>} 
    {section==='Pedidos'&&<Orders orders={orders} onAdvance={advanceOrder}/>} 
-   {section==='Menú'&&<Menu menu={menu} q={q} setQ={setQ} onToggle={toggleMenu}/>} 
+   {section==='Menú'&&<Menu menu={menu} q={q} setQ={setQ} onToggle={toggleMenu} onSaved={loadData}/>} 
    {section==='Disponibilidad'&&<Availability menu={menu} onToggle={toggleMenu}/>} 
    {section==='Configuración'&&<SettingsPage settings={settings} setSettings={setSettings}/>} 
   </main>
@@ -113,7 +113,111 @@ function OrderRow({o}){return <div className="order-row"><div><b>{o.order_number
 
 function Orders({orders,onAdvance}){return <section className="card"><div className="card-head"><div><span className="eyebrow">PICKUP</span><h2>Pedidos de hoy</h2></div></div><div className="table-head"><span>Pedido</span><span>Contenido</span><span>Hora</span><span>Total</span><span>Estado</span></div>{orders.map(o=><div className="order-row clickable" key={o.id} onClick={()=>onAdvance(o)}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>)}{!orders.length&&<p className="hint">Todavía no hay pedidos de hoy.</p>}<p className="hint">Haz clic en un pedido para avanzar su estado.</p></section>}
 
-function Menu({menu,q,setQ,onToggle}){const visible=menu.filter(m=>m.name.toLowerCase().includes(q.toLowerCase())); return <section className="card"><div className="card-head"><div><span className="eyebrow">CATÁLOGO SUPABASE</span><h2>Menú</h2></div></div><div className="search"><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar producto..."/></div><div className="menu-grid">{visible.map(m=><article className="menu-card" key={m.id}><div className="food-icon">{m.category==='Bebida'?'🥤':m.category==='Base'?'🍚':m.category==='Complemento'?'🥟':m.category==='Extra'?'➕':'🥡'}</div><div><small>{m.category}</small><h3>{m.name}</h3>{Number(m.price)>0&&<strong>{money(m.price)}</strong>}</div><button onClick={()=>onToggle(m)} className={m.active?'on':''}>{m.active?<ToggleRight/>:<ToggleLeft/>}</button></article>)}</div></section>}
+const DEFAULT_IMAGES={Base:'/img/product/arroz-frito.jpg',Guisado:'/img/product/orange-chicken.jpg',Bebida:'/img/product/refresco.jpg',Complemento:'/img/product/chinito-bites.jpg',Extra:'/img/product/arroz-frito.jpg'}
+const EDIT_CATEGORIES=['Base','Guisado','Bebida','Complemento','Extra']
+const editableDefaults=(item=null)=>({
+  name:item?.name||'',category:item?.category||'Base',price:String(item?.price??0),
+  description:item?.description||'',weight:item?.metadata?.weight||(item?.category==='Extra'?'125 g':''),image:item?.image||'',active:item?.active??true,
+  sort_order:String(item?.sort_order??0),
+  sell_by_volume:item?.metadata?.sell_by_volume??(Number(item?.metadata?.half_price)>0&&Number(item?.metadata?.liter_price)>0),
+  half_price:item?.metadata?.half_price == null?'':String(item.metadata.half_price),
+  liter_price:item?.metadata?.liter_price == null?'':String(item.metadata.liter_price),
+  max_guisados:item?.metadata?.max_guisados??({ 'chi-nito-1':1,'chi-nito-2':2,'chi-nito-3':3 }[item?.slug]||1),
+})
+const slugify=(text)=>text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,70)
+
+function Menu({menu,q,setQ,onToggle,onSaved}){
+ const [editing,setEditing]=useState(undefined)
+ const [categoryFilter,setCategoryFilter]=useState('Todas')
+ const visible=menu.filter(m=>(categoryFilter==='Todas'||m.category===categoryFilter)&&`${m.name} ${m.description||''}`.toLowerCase().includes(q.toLowerCase()))
+ return <section className="card menu-management">
+   <div className="card-head menu-manager-head"><div><span className="eyebrow">CATÁLOGO SUPABASE</span><h2>Menú</h2><p className="hint">Edita nombres, precios, descripciones, imágenes, orden y disponibilidad.</p></div><button className="primary menu-new-btn" onClick={()=>setEditing(null)}><Plus size={16}/> Nuevo producto</button></div>
+   <div className="menu-filterbar"><div className="search"><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar producto..."/></div><select aria-label="Filtrar categoría" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>{['Todas','Chi-nito',...EDIT_CATEGORIES].map(c=><option key={c}>{c}</option>)}</select></div>
+   <div className="menu-grid">{visible.map(m=><article className="menu-card" key={m.id}>
+     <div className="food-icon">{m.image?<img src={m.image} alt=""/>:'🥡'}</div>
+     <div className="menu-card-copy"><small>{m.category}</small><h3>{m.name}</h3>{m.description&&<p title={m.description}>{m.description}</p>}{Number(m.price)>0&&<strong>{money(m.price)}</strong>}{m.category==='Guisado'&&m.metadata?.sell_by_volume!==false&&Number(m.metadata?.half_price)>0&&<small>½ L {money(m.metadata.half_price)} · 1 L {money(m.metadata.liter_price)}</small>}</div>
+     <div className="menu-card-actions"><button className="edit-menu-btn" onClick={()=>setEditing(m)} aria-label={`Editar ${m.name}`} title="Editar"><Pencil size={17}/></button><button onClick={()=>onToggle(m)} title={m.active?'Agotar':'Activar'} aria-label={`${m.active?'Agotar':'Activar'} ${m.name}`} className={m.active?'on':''}>{m.active?<ToggleRight/>:<ToggleLeft/>}</button></div>
+   </article>)}</div>
+   {!visible.length&&<p className="hint">No hay productos con ese filtro.</p>}
+   {editing!==undefined&&<MenuEditor key={editing?.id||'new'} item={editing} menu={menu} onClose={()=>setEditing(undefined)} onSaved={async()=>{setEditing(undefined);await onSaved()}}/>}
+ </section>
+}
+
+function MenuEditor({item,menu,onClose,onSaved}){
+ const [draft,setDraft]=useState(()=>editableDefaults(item))
+ const [file,setFile]=useState(null)
+ const [preview,setPreview]=useState(item?.image||'')
+ const [busy,setBusy]=useState(false)
+ const [error,setError]=useState('')
+ const isBowl=item?.category==='Chi-nito'
+ const category=isBowl?'Chi-nito':draft.category
+ const update=(field,value)=>setDraft(prev=>({...prev,[field]:value}))
+ const onFile=(event)=>{
+   const next=event.target.files?.[0]||null
+   if(!next){setFile(null);setPreview(item?.image||'');return}
+   if(!['image/jpeg','image/png','image/webp'].includes(next.type)||next.size>5*1024*1024){setError('Usa JPG, PNG o WebP de máximo 5 MB.');setFile(null);setPreview(item?.image||'');event.target.value='';return}
+   setError('');setFile(next)
+   const reader=new FileReader();reader.onload=()=>setPreview(String(reader.result||''));reader.readAsDataURL(next)
+ }
+ const save=async(event)=>{
+   event.preventDefault();setError('')
+   const name=draft.name.trim(),slug=item?.slug||slugify(name)
+   if(!name||!slug){setError('Escribe un nombre válido.');return}
+   const price=Number(draft.price)
+   if(!Number.isFinite(price)||price<0){setError('El precio no es válido.');return}
+   let half=0,liter=0
+   if(category==='Guisado'&&draft.sell_by_volume){
+     half=Number(draft.half_price);liter=Number(draft.liter_price)
+     if(!Number.isFinite(half)||half<=0||!Number.isFinite(liter)||liter<=0){setError('Ingresa precios válidos para medio litro y litro.');return}
+   }
+   if(!item&&menu.some(m=>m.slug===slug)){setError('Ya existe un producto con ese nombre. Modifica su nombre o edita el existente.');return}
+   setBusy(true)
+   try{
+     let image=item?.image||DEFAULT_IMAGES[category]||null
+     if(file){
+       const ext=file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg'
+       const imagePath=`${slug}/${crypto.randomUUID()}.${ext}`
+       const uploaded=await supabase.storage.from('chinito-menu').upload(imagePath,file,{contentType:file.type,cacheControl:'3600',upsert:false})
+       if(uploaded.error)throw uploaded.error
+       image=supabase.storage.from('chinito-menu').getPublicUrl(imagePath).data.publicUrl
+     }
+     const meta={...(item?.metadata||{})}
+     if(category==='Guisado'){
+       meta.sell_by_volume=Boolean(draft.sell_by_volume)
+       meta.half_price=draft.sell_by_volume?half:null
+       meta.liter_price=draft.sell_by_volume?liter:null
+     }
+     if(category==='Chi-nito')meta.max_guisados=Number(draft.max_guisados)||1
+     if(category==='Extra')meta.weight=draft.weight.trim()
+     const payload={name,category,price,image,description:draft.description.trim()||null,active:Boolean(draft.active),sort_order:Number(draft.sort_order)||0,metadata:meta}
+     const result=item?await supabase.from('menu_items').update(payload).eq('id',item.id).select('id').single():await supabase.from('menu_items').insert({...payload,slug}).select('id').single()
+     if(result.error)throw result.error
+     await onSaved()
+   }catch(err){setError(err.message||'No se pudo guardar el producto.')}finally{setBusy(false)}
+ }
+ return <div className="menu-dialog-overlay" onMouseDown={e=>{if(e.target===e.currentTarget&&!busy)onClose()}}>
+   <div className="menu-dialog" role="dialog" aria-modal="true" aria-label={item?`Editar ${item.name}`:'Agregar producto'}>
+    <div className="menu-dialog-head"><div><span className="eyebrow">ADMINISTRACIÓN DE MENÚ</span><h2>{item?'Editar producto':'Nuevo producto'}</h2></div><button type="button" onClick={onClose} disabled={busy} aria-label="Cerrar"><X size={20}/></button></div>
+    <form onSubmit={save} className="menu-editor-form">
+     <label>Nombre<input required maxLength={110} value={draft.name} onChange={e=>update('name',e.target.value)} placeholder="Nombre en el menú"/></label>
+     <label>Categoría<select required disabled={isBowl} value={category} onChange={e=>update('category',e.target.value)}>{isBowl&&<option value="Chi-nito">Chi-nito</option>}{EDIT_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
+     <label className="menu-field-wide">Descripción<textarea rows={3} maxLength={600} value={draft.description} onChange={e=>update('description',e.target.value)} placeholder="Ingredientes, porciones y descripción del producto"/></label>
+     {category==='Extra'&&<label>Porción o presentación<input maxLength={50} value={draft.weight} onChange={e=>update('weight',e.target.value)} placeholder="125 g"/></label>}
+     {category==='Chi-nito'&&<label>Máximo de guisados<select value={draft.max_guisados} onChange={e=>update('max_guisados',Number(e.target.value))}>{[1,2,3].map(n=><option value={n} key={n}>{n}</option>)}</select></label>}
+     {category!=='Guisado'&&<label>{category==='Base'?'Recargo por esta base (MXN)':'Precio (MXN)'}<input type="number" inputMode="decimal" min="0" step="0.01" required value={draft.price} onChange={e=>update('price',e.target.value)}/></label>}
+     {category==='Guisado'&&<><label>Recargo por elegir este guisado en un Chi-nito (MXN)<input type="number" inputMode="decimal" min="0" step="0.01" value={draft.price} onChange={e=>update('price',e.target.value)}/></label>
+       <label className="menu-field-wide menu-volume-toggle"><input type="checkbox" checked={Boolean(draft.sell_by_volume)} onChange={e=>update('sell_by_volume',e.target.checked)}/><span>¿Se vende también por ½ litro y 1 litro?</span></label>
+       {draft.sell_by_volume&&<><label>Precio de ½ litro (MXN)<input type="number" required min="0.01" step="0.01" value={draft.half_price} onChange={e=>update('half_price',e.target.value)}/></label><label>Precio de 1 litro (MXN)<input type="number" required min="0.01" step="0.01" value={draft.liter_price} onChange={e=>update('liter_price',e.target.value)}/></label></>}
+     </>}
+     <label>Orden de aparición<input type="number" step="1" value={draft.sort_order} onChange={e=>update('sort_order',e.target.value)}/></label>
+     <label className="menu-field-wide menu-volume-toggle"><input type="checkbox" checked={Boolean(draft.active)} onChange={e=>update('active',e.target.checked)}/><span>Producto disponible en la app</span></label>
+     <div className="menu-field-wide menu-image-upload"><div className="menu-image-preview">{preview?<img src={preview} alt="Imagen del producto"/>:<ImagePlus size={32}/>}</div><div><b>Imagen del producto</b><p className="hint">Opcional. Si no subes otra, se conserva la imagen actual. JPG/PNG/WebP, máximo 5 MB.</p><input type="file" accept="image/jpeg,image/png,image/webp" onChange={onFile}/>{file&&<small>{file.name}</small>}</div></div>
+     {error&&<p className="menu-editor-error menu-field-wide" role="alert">{error}</p>}
+     <div className="menu-field-wide menu-editor-actions"><button type="button" onClick={onClose} disabled={busy}>Cancelar</button><button type="submit" className="primary" disabled={busy}>{busy?'Guardando…':item?'Guardar cambios':'Agregar producto'}</button></div>
+    </form>
+   </div>
+ </div>
+}
 
 function Availability({menu,onToggle}){return <section className="card"><div className="card-head"><div><span className="eyebrow">CONTROL RÁPIDO</span><h2>Disponibilidad</h2></div></div><p className="lead">Activa o agota productos al instante. El cambio se refleja en la app del cliente.</p><div className="availability">{menu.map(m=><button key={m.id} onClick={()=>onToggle(m)} className={m.active?'available':'sold'}><span>{m.active?'●':'○'}</span><div><b>{m.name}</b><small>{m.category}</small></div><em>{m.active?'Disponible':'Agotado'}</em></button>)}</div></section>}
 

@@ -87,8 +87,31 @@ const GUISADOS_PARA_LLEVAR = GUISADOS.map((g,index)=>({
   ][index],
 }))
 
+
+const volumeEnabled=(r)=>r?.metadata?.sell_by_volume!==false&&Number(r?.metadata?.half_price)>0&&Number(r?.metadata?.liter_price)>0
+const createCatalogItem=(r)=>({id:r.slug,slug:r.slug,name:r.name,image:r.image||'/img/product/chi-nito-1.jpg',price:Number(r.price),description:r.description||'',active:r.active,metadata:r.metadata||{}})
+function buildClientMenu(rows){
+  if(!rows)return {products:PRODUCTOS,bases:BASES,guisados:GUISADOS,extras:EXTRAS,complements:COMPLEMENTOS_HOME,takeaway:GUISADOS_PARA_LLEVAR,drinks:BEBIDAS_HOME,flavors:REFRESCO_SABORES}
+  const grouped=(category)=>rows.filter(r=>r.category===category).map(createCatalogItem)
+  const products=grouped('Chi-nito').map(r=>({
+    ...r,baseCount:1,guisados:Math.max(1,Math.min(3,Number(r.metadata?.max_guisados||({'chi-nito-1':1,'chi-nito-2':2,'chi-nito-3':3}[r.slug])||1))),desc:r.description,
+  }))
+  const bases=grouped('Base')
+  const guisados=grouped('Guisado')
+  const extras=rows.filter(r=>['Bebida','Complemento','Extra'].includes(r.category)).map(r=>({
+    ...createCatalogItem(r),type:{Bebida:'Bebidas',Complemento:'Complementos',Extra:'Extras'}[r.category],weight:r.category==='Extra'?(r.metadata?.weight||'125 g'):'',
+  }))
+  const complements=grouped('Complemento').map(r=>({...r,id:`${r.slug}-home`,catalogSlug:r.slug,desc:r.description}))
+  const takeaway=grouped('Guisado').filter(r=>volumeEnabled(r)).map(r=>({...r,halfPrice:Number(r.metadata.half_price),literPrice:Number(r.metadata.liter_price)}))
+  const coreFlavors=['coca-cola','coca-cola-zero','sprite','fanta','manzanita']
+  const flavors=grouped('Bebida').filter(r=>coreFlavors.includes(r.slug)).map(r=>({slug:r.slug,name:r.name,image:r.image}))
+  const drinks=grouped('Bebida').filter(r=>!coreFlavors.includes(r.slug)).map(r=>({...r,id:`${r.slug}-home`,catalogSlug:r.slug,mode:'qty'}))
+  if(flavors.length) drinks.splice(Math.min(1,drinks.length),0,{id:'refresco-home',catalogSlug:flavors[0].slug,name:'Refresco',image:'/img/product/refresco.jpg',price:Number(rows.find(r=>r.slug===flavors[0].slug)?.price||30),mode:'choose'})
+  return {products,bases,guisados,extras,complements,takeaway,drinks,flavors}
+}
+
 const itemUnitPrice=(item)=> item.kind==='configured'
-  ? item.product.price + item.extras.reduce((s,e)=>s+(e.price*(e.quantity || 1)),0)
+  ? Number(item.product.price)+Number(item.base?.price||0)+item.guisados.reduce((s,g)=>s+Number(g.price||0),0)+item.extras.reduce((s,e)=>s+(Number(e.price)*(e.quantity || 1)),0)
   : item.price
 
 const formatExtras = (extras=[]) => extras.map(e => `${e.quantity && e.quantity > 1 ? `${e.quantity}x ` : ''}${e.name}`).join(', ')
@@ -115,6 +138,7 @@ function App(){
   const [placing,setPlacing]=useState(false)
   const [placeError,setPlaceError]=useState('')
   const [catalog,setCatalog]=useState({})
+  const [catalogRows,setCatalogRows]=useState(null)
   const [storeSettings,setStoreSettings]=useState(null)
 
   useEffect(()=>{
@@ -126,7 +150,7 @@ function App(){
         supabase.from('store_settings').select('*').eq('id',1).maybeSingle(),
       ])
       if(!active) return
-      if(menu) setCatalog(Object.fromEntries(menu.map(item=>[item.slug,item])))
+      if(menu){ setCatalog(Object.fromEntries(menu.map(item=>[item.slug,item])));setCatalogRows(menu) }
       if(settings) setStoreSettings(settings)
     }
     loadCatalog()
@@ -137,13 +161,14 @@ function App(){
     return ()=>{active=false;supabase.removeChannel(channel)}
   },[])
 
+  const clientMenu=useMemo(()=>buildClientMenu(catalogRows),[catalogRows])
   const isAvailable=(slug)=>catalog[slug]?.active !== false
   const priceFor=(slug,fallback)=>Number(catalog[slug]?.price ?? fallback)
 
   const addProduct=(p)=>{
     if(!isAvailable(p.slug)) return
     setProduct({...p,price:priceFor(p.slug,p.price)})
-    setBase(BASES[0])
+    setBase(clientMenu.bases.find(b=>isAvailable(b.slug))||null)
     setGuisados([])
     setExtrasQty({})
     setScreen('builder')
@@ -156,7 +181,7 @@ function App(){
   const changeExtraQty=(entry,delta)=>{
     setExtrasQty(prev=>{
       const current = prev[entry.id]?.quantity || 0
-      const next = current + delta
+      const next = Math.min(50,current + delta)
       if(next <= 0){
         const clone = {...prev}
         delete clone[entry.id]
@@ -165,6 +190,13 @@ function App(){
       return {...prev,[entry.id]:{...entry,quantity:next}}
     })
   }
+  useEffect(()=>{
+    if(!catalogRows)return
+    setProduct(prev=>clientMenu.products.find(x=>x.slug===prev.slug)||prev)
+    setBase(prev=>prev?clientMenu.bases.find(x=>x.slug===prev.slug)||null:null)
+    setGuisados(prev=>prev.map(g=>clientMenu.guisados.find(x=>x.slug===g.slug)).filter(Boolean))
+    setExtrasQty(prev=>Object.fromEntries(Object.entries(prev).filter(([id])=>clientMenu.extras.some(x=>x.id===id)).map(([id,old])=>[id,{...clientMenu.extras.find(x=>x.id===id),quantity:old.quantity}])))
+  },[clientMenu,catalogRows])
   const ready=base && guisados.length>=1 && isAvailable(product.slug) && isAvailable(base.slug) && guisados.every(g=>isAvailable(g.slug||g.id))
 
   const addConfiguredToCart=()=>{
@@ -191,7 +223,7 @@ function App(){
     const key=`${entry.kind}-${entry.refId}-${entry.variant || ''}`
     setCartItems(prev=>{
       const existing=prev.find(item=>item.cartKey===key)
-      if(existing) return prev.map(item=>item.cartKey===key?{...item,quantity:item.quantity+1}:item)
+      if(existing) return prev.map(item=>item.cartKey===key?{...item,quantity:Math.min(50,item.quantity+1)}:item)
       return [...prev,{...entry,id:`${key}-${Date.now()}`,cartKey:key,quantity:1}]
     })
   }
@@ -207,7 +239,7 @@ function App(){
   const removeCartItem=(id)=>setCartItems(prev=>prev.filter(item=>item.id!==id))
   const changeCartQty=(id,delta)=>setCartItems(prev=>prev.flatMap(item=>{
     if(item.id!==id) return [item]
-    const next=item.quantity+delta
+    const next=Math.min(50,item.quantity+delta)
     return next<=0?[]:[{...item,quantity:next}]
   }))
   const placeOrder=async()=>{
@@ -246,8 +278,15 @@ function App(){
     setPlaced(true)
   }
 
+  const displayCart=useMemo(()=>cartItems.map(item=>{
+    if(item.kind==='configured') return {...item,product:{...item.product,...(catalog[item.product.slug]||{}),price:priceFor(item.product.slug,item.product.price)},base:{...item.base,price:priceFor(item.base.slug,item.base.price||0)},guisados:item.guisados.map(g=>({...g,price:priceFor(g.slug,g.price||0)})),extras:item.extras.map(e=>({...e,name:catalog[e.catalogSlug||e.id]?.name||e.name,image:catalog[e.catalogSlug||e.id]?.image||e.image,price:priceFor(e.catalogSlug||e.id,e.price)}))}
+    const row=catalog[item.catalogSlug]
+    if(!row)return item
+    const catalogPrice=item.kind==='takeaway'?(item.variant==='1 litro'?Number(row.metadata?.liter_price||0):Number(row.metadata?.half_price||0)):Number(row.price)
+    return {...item,name:row.name,image:row.image||item.image,price:catalogPrice}
+  }),[cartItems,catalog])
   const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
-  const cartTotal=useMemo(()=>cartItems.reduce((sum,item)=>sum+(itemUnitPrice(item)*item.quantity),0),[cartItems])
+  const cartTotal=useMemo(()=>displayCart.reduce((sum,item)=>sum+(itemUnitPrice(item)*item.quantity),0),[displayCart])
 
   if(placed) return <Success order={lastOrder} onReset={()=>{setPlaced(false);setLastOrder(null);setScreen('home');setCartItems([])}} />
 
@@ -259,12 +298,12 @@ function App(){
     </header>}
 
     {screen==='home' && <>
-      <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} catalog={catalog} />
+      <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} catalog={catalog} menuData={clientMenu} />
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
-      {cartOpen && <CartSheet items={cartItems} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={()=>{setCartOpen(false);setScreen('cart');window.scrollTo(0,0)}} />}
+      {cartOpen && <CartSheet items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={()=>{setCartOpen(false);setScreen('cart');window.scrollTo(0,0)}} />}
     </>}
-    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
-    {screen==='cart' && <Cart items={cartItems} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
+    {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
+    {screen==='cart' && <Cart items={displayCart} total={cartTotal} pickup={pickup} setPickup={setPickup} name={name} setName={setName} phone={phone} setPhone={setPhone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
     {profileOpen && <ProfileDrawer
       isLoggedIn={isLoggedIn}
@@ -324,7 +363,8 @@ function ProfileDrawer({isLoggedIn,setIsLoggedIn,name,setName,phone,setPhone,ema
   </div>
 }
 
-function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog}){
+function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
+  const {products:PRODUCTOS,complements:COMPLEMENTOS_HOME,takeaway:GUISADOS_PARA_LLEVAR,drinks:BEBIDAS_HOME,flavors:REFRESCO_SABORES}=menuData
   const [takeawaySize,setTakeawaySize]=useState('half')
   const [sodaOpen,setSodaOpen]=useState(false)
   const goToMenu=()=>document.getElementById('menu-chinito')?.scrollIntoView({behavior:'smooth',block:'start'})
@@ -375,7 +415,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog}){
 
     <section className="home-scroll-section takeaway-section">
       <div className="home-scroll-head takeaway-head">
-        <div><h2>Guisados para llevar</h2><span>Elige el tamaño y desliza para ver los 9</span></div>
+        <div><h2>Guisados para llevar</h2><span>Elige el tamaño y desliza para ver más</span></div>
         <div className="size-switch" aria-label="Tamaño de guisado">
           <button className={takeawaySize==='half'?'active':''} onClick={()=>setTakeawaySize('half')}>1/2 litro</button>
           <button className={takeawaySize==='liter'?'active':''} onClick={()=>setTakeawaySize('liter')}>1 litro</button>
@@ -384,7 +424,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog}){
       <div className="home-card-scroller">
         {GUISADOS_PARA_LLEVAR.map(item=>{
           const itemPrice=takeawayPrice(item)
-          const ok=available(item.slug)
+          const ok=available(item.slug) && itemPrice>0
           const qty=getCartQty('takeaway',item.id,variant)
           return <article className={`home-add-card ${ok?'':'soldout-card'}`} key={`${item.id}-${takeawaySize}`}>
             <div className="home-add-visual takeaway"><img src={item.image} alt={item.name}/><small>{variant}</small></div>
@@ -452,12 +492,13 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog}){
   </main>
 }
 
-function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extrasQty,changeExtraQty,ready,onBack,onAdd,catalog}){
+function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extrasQty,changeExtraQty,ready,onBack,onAdd,catalog,menuData}){
+  const {bases:BASES,guisados:GUISADOS,extras:EXTRAS}=menuData
   const available=(slug)=>catalog[slug]?.active !== false
   const price=(slug,fallback)=>Number(catalog[slug]?.price ?? fallback)
   const guisadosSubtitle = product.guisados === 1 ? 'Selecciona 1 guisado' : `Selecciona de 1 a ${product.guisados} guisados`
-  const selectedExtras = Object.values(extrasQty).filter(e=>available(e.id)).map(e=>({...e,price:price(e.id,e.price)}))
-  const unitPrice=price(product.slug,product.price)+selectedExtras.reduce((s,e)=>s+(e.price*e.quantity),0)
+  const selectedExtras = Object.values(extrasQty).filter(e=>available(e.id)).map(e=>({...e,name:catalog[e.id]?.name||e.name,image:catalog[e.id]?.image||e.image,price:price(e.id,e.price)}))
+  const unitPrice=price(product.slug,product.price)+Number(base?.price||0)+guisados.reduce((sum,g)=>sum+price(g.slug,g.price||0),0)+selectedExtras.reduce((s,e)=>s+(e.price*e.quantity),0)
   const customLine=[base?.name,...guisados.map(g=>g.name)].filter(Boolean).join(' · ')
   const extrasLine=selectedExtras.length?` + ${formatExtras(selectedExtras)}`:''
 
