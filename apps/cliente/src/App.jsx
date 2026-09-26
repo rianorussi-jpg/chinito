@@ -637,44 +637,102 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
 }
 
 function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,onBack,onPlace,placing,placeError}){
+  const finalTotal = Math.max(0, total-cashbackDiscount)
+  const itemCount = items.reduce((sum,item)=>sum+Number(item.quantity||0),0)
   return <main className="page cart-page checkout-page">
     <div className="checkout-topline"><button className="checkout-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={21}/></button><h2>Checkout</h2><span aria-hidden="true" /></div>
 
-    <div className="pickup-banner"><ShoppingBag size={20}/><div><b>Solo pickup</b><span>Tu orden se prepara en nuestro local.</span></div><strong>RÁPIDO · FÁCIL</strong></div>
-
-    <section className="cart-list checkout-order-list">
-      {items.length===0 && <p className="empty-cart-copy">Tu carrito está vacío.</p>}
-      {items.map(item=>{
-        const unit=itemUnitPrice(item)
-        const configured=item.kind==='configured'
-        return <div className="cart-item main configured-cart-item checkout-order-item" key={item.id}>
-          <div className="item-emoji"><img src={configured?item.product.image:item.image} alt={configured?item.product.name:item.name}/></div>
-          <div className="item-copy">
-            <h3>{item.quantity} × {configured?item.product.name:item.name}</h3>
-            {configured ? <>
-              <p><b>Base:</b> {item.base?.name}</p>
-              <p><b>Guisados:</b> {item.guisados.map(g=>g.name).join(', ')}</p>
-              {item.extras.length>0 && <p><b>Extras:</b> {formatExtras(item.extras)}</p>}
-            </> : item.variant && <p><b>Tamaño:</b> {item.variant}</p>}
-          </div>
-          <strong>${unit*item.quantity}</strong>
-        </div>
-      })}
+    <section className="checkout-hero-card">
+      <div className="checkout-hero-copy">
+        <span className="checkout-hero-pill">Solo pickup</span>
+        <h1>Finaliza tu pedido</h1>
+        <p>Revisa tu orden, elige tu horario y confirma cómo pagarás.</p>
+      </div>
+      <div className="checkout-hero-total">
+        <small>Total actual</small>
+        <strong>${finalTotal.toFixed(2)}</strong>
+        <span>{itemCount} artículo{itemCount===1?'':'s'}</span>
+      </div>
     </section>
 
-    <section className="checkout-card"><div className="field-head"><Clock3 size={19}/><div><h3>Hora de pickup</h3><p>Selecciona tu hora</p></div></div><select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 20–30 min</option><option>Hoy, 7:00 p.m.</option><option>Hoy, 7:30 p.m.</option><option>Hoy, 8:00 p.m.</option></select></section>
+    <section className="checkout-mini-profile">
+      <div className="checkout-mini-item">
+        <small>Recoge a nombre de</small>
+        <strong>{name||'Completa tu perfil'}</strong>
+      </div>
+      <div className="checkout-mini-item">
+        <small>Teléfono de contacto</small>
+        <strong>{phone||'Completa tu perfil'}</strong>
+      </div>
+    </section>
 
-    <section className="checkout-card"><div className="field-head"><UserRound size={19}/><div><h3>Tus datos</h3><p>Datos de tu perfil para identificar el pedido</p></div></div><div className="inputs checkout-readonly-fields"><div><small>Nombre completo</small><strong>{name||'Completa tu perfil'}</strong></div><div><small>Teléfono</small><strong>{phone||'Completa tu perfil'}</strong></div></div></section>
+    <section className="checkout-block">
+      <div className="checkout-block-head">
+        <div>
+          <span className="checkout-kicker">TU PEDIDO</span>
+          <h3>Resumen del carrito</h3>
+        </div>
+        <span className="checkout-count-chip">{itemCount} item{itemCount===1?'':'s'}</span>
+      </div>
+      <div className="checkout-order-stack">
+        {items.length===0 && <p className="empty-cart-copy">Tu carrito está vacío.</p>}
+        {items.map(item=>{
+          const unit=itemUnitPrice(item)
+          const configured=item.kind==='configured'
+          return <article className="checkout-order-card" key={item.id}>
+            <div className="checkout-order-thumb"><img src={configured?item.product.image:item.image} alt={configured?item.product.name:item.name}/></div>
+            <div className="checkout-order-copy">
+              <div className="checkout-order-top">
+                <h4>{configured?item.product.name:item.name}</h4>
+                <span>{item.quantity} × ${unit.toFixed(2)}</span>
+              </div>
+              {configured ? <>
+                <p><b>Base:</b> {item.base?.name}</p>
+                <p><b>Guisados:</b> {item.guisados.map(g=>g.name).join(', ')}</p>
+                {item.extras.length>0 && <p><b>Extras:</b> {formatExtras(item.extras)}</p>}
+              </> : item.variant && <p><b>Tamaño:</b> {item.variant}</p>}
+            </div>
+            <strong className="checkout-order-price">${(unit*item.quantity).toFixed(2)}</strong>
+          </article>
+        })}
+      </div>
+    </section>
 
-    <section className="checkout-card cashback-checkout-card"><div className="field-head"><span className="cashback-icon">$</span><div><h3>Tu cashback</h3><p>Acumula $1 por cada $10 al completar tu pedido</p></div></div>
+    <div className="checkout-split">
+      <section className="checkout-panel">
+        <div className="field-head"><Clock3 size={18}/><div><h3>Hora de pickup</h3><p>Selecciona cuándo pasarás por tu orden</p></div></div>
+        <select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 20–30 min</option><option>Hoy, 7:00 p.m.</option><option>Hoy, 7:30 p.m.</option><option>Hoy, 8:00 p.m.</option></select>
+      </section>
+
+      <section className="checkout-panel">
+        <div className="field-head"><CreditCard size={18}/><div><h3>Método de pago</h3><p>Elige cómo pagarás tu pedido</p></div></div>
+        <div className="pay-grid modern-pay-grid"><button className={payment==='online'?'selected':''} onClick={()=>setPayment('online')}><CreditCard size={18}/><div><b>Pagar en línea</b><span>Tarjeta de crédito o débito</span></div></button><button className={payment==='pickup'?'selected':''} onClick={()=>setPayment('pickup')}><ShoppingBag size={18}/><div><b>Pagar al recoger</b><span>Efectivo o tarjeta</span></div></button></div>
+      </section>
+    </div>
+
+    <section className="checkout-panel cashback-panel">
+      <div className="field-head"><span className="cashback-icon">$</span><div><h3>Tu cashback</h3><p>Acumula $1 por cada $10 al completar tu pedido</p></div></div>
       <div className="cashback-checkout-row"><div><small>Saldo disponible</small><strong>${cashbackBalance.toFixed(2)}</strong></div><label className="cashback-toggle"><input type="checkbox" checked={redeemCashback&&cashbackBalance>0} onChange={e=>setRedeemCashback(e.target.checked)} disabled={cashbackLoading||cashbackBalance<=0||total<=0}/><span>Usar cashback en este pedido</span></label></div>
       {cashbackDiscount>0&&<p className="cashback-preview">Se descontarán ${cashbackDiscount.toFixed(2)} de tu pedido.</p>}
       {cashbackLoading&&<small className="cashback-hint">Actualizando saldo…</small>}
     </section>
 
-    <section className="checkout-card"><div className="field-head"><CreditCard size={19}/><div><h3>Método de pago</h3><p>Selecciona una opción</p></div></div><div className="pay-grid"><button className={payment==='online'?'selected':''} onClick={()=>setPayment('online')}><CreditCard size={19}/><div><b>Pagar en línea</b><span>Tarjeta de crédito o débito</span></div></button><button className={payment==='pickup'?'selected':''} onClick={()=>setPayment('pickup')}><ShoppingBag size={19}/><div><b>Pagar al recoger</b><span>Efectivo o tarjeta</span></div></button></div></section>
-
-    <section className="total-box">{cashbackDiscount>0&&<><div className="cashback-total-line"><span>Subtotal</span><span>${total.toFixed(2)}</span></div><div className="cashback-total-line"><span>Cashback aplicado</span><span>−${cashbackDiscount.toFixed(2)}</span></div></>}<div><span>Total</span><strong>${(total-cashbackDiscount).toFixed(2)}</strong></div>{placeError&&<p className="checkout-error">{placeError}</p>}<button className="primary checkout-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading} onClick={onPlace}>{placing?'Creando pedido…':'Confirmar pedido'} {!placing&&<ChevronRight size={18}/>}</button></section>
+    <section className="checkout-total-card">
+      <div className="checkout-total-head">
+        <div>
+          <span className="checkout-kicker">RESUMEN FINAL</span>
+          <h3>Total a pagar</h3>
+        </div>
+        <strong>${finalTotal.toFixed(2)}</strong>
+      </div>
+      <div className="checkout-total-lines">
+        <div><span>Subtotal</span><span>${total.toFixed(2)}</span></div>
+        {cashbackDiscount>0 && <div><span>Cashback aplicado</span><span>−${cashbackDiscount.toFixed(2)}</span></div>}
+        <div><span>Servicio</span><span>Pickup sin costo</span></div>
+      </div>
+      {placeError&&<p className="checkout-error">{placeError}</p>}
+      <button className="primary checkout-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading} onClick={onPlace}>{placing?'Creando pedido…':'Confirmar pedido'} {!placing&&<ChevronRight size={18}/>}</button>
+    </section>
   </main>
 }
 
