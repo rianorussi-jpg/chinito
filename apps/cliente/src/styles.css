@@ -1847,3 +1847,235 @@
   .checkout-summary-copy small{max-width:170px}
   .checkout-mobile-bar button{min-width:134px;padding:0 14px}
 }
+
+/* Footer + páginas legales */
+.app-footer{
+  margin-top:34px;
+  background:#171313;
+  color:#fff;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.app-footer-inner{
+  max-width:1180px;
+  margin:0 auto;
+  padding:34px 20px 28px;
+  display:grid;
+  grid-template-columns:minmax(0,1.45fr) minmax(180px,.75fr) minmax(190px,.8fr);
+  gap:34px;
+  align-items:start;
+}
+.app-footer-brand img{
+  display:block;
+  width:auto;
+  height:42px;
+  max-width:170px;
+  object-fit:contain;
+  background:#fff8ef;
+  border-radius:12px;
+  padding:5px 9px;
+  margin-bottom:14px;
+}
+.app-footer-brand p{
+  max-width:490px;
+  margin:0;
+  color:rgba(255,255,255,.68);
+  font-size:13px;
+  line-height:1.65;
+}
+.app-footer-links,
+.app-footer-pickup{
+  display:grid;
+  gap:10px;
+}
+.app-footer-links strong,
+.app-footer-pickup strong{
+  font-size:12px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.app-footer-links a{
+  width:max-content;
+  color:rgba(255,255,255,.74);
+  font-size:13px;
+  text-decoration:none;
+  transition:color .15s ease;
+}
+.app-footer-links a:hover{color:#fff}
+.app-footer-pickup span{
+  color:rgba(255,255,255,.66);
+  font-size:13px;
+  line-height:1.55;
+}
+.app-footer-bottom{
+  border-top:1px solid rgba(255,255,255,.08);
+  padding:14px 20px 18px;
+  text-align:center;
+  color:rgba(255,255,255,.48);
+  font-size:11px;
+}
+.legal-page{
+  width:min(860px,calc(100% - 28px));
+  margin:24px auto 60px;
+}
+.legal-page-head{
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+  padding:20px 0 18px;
+}
+.legal-page-head>button{
+  width:42px;
+  height:42px;
+  border:1px solid #eadfd5;
+  border-radius:14px;
+  background:#fff;
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.legal-page-head span{
+  display:block;
+  color:var(--red);
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:.14em;
+  margin-bottom:5px;
+}
+.legal-page-head h1{
+  margin:0;
+  font-size:clamp(28px,5vw,44px);
+  line-height:1;
+  letter-spacing:-.045em;
+}
+.legal-page-head p{
+  margin:8px 0 0;
+  color:#7a6f68;
+  font-size:12px;
+}
+.legal-content{
+  background:#fff;
+  border:1px solid rgba(43,27,18,.07);
+  border-radius:26px;
+  padding:26px;
+  box-shadow:0 16px 40px rgba(43,27,18,.07);
+}
+.legal-content section+section{
+  border-top:1px solid #eee4da;
+  margin-top:20px;
+  padding-top:20px;
+}
+.legal-content h2{
+  margin:0 0 8px;
+  font-size:16px;
+  line-height:1.25;
+}
+.legal-content p{
+  margin:0;
+  color:#5f554f;
+  font-size:13px;
+  line-height:1.75;
+}
+
+/* Registro: aceptación legal */
+.auth-legal-consent{
+  display:grid;
+  grid-template-columns:18px minmax(0,1fr);
+  gap:9px;
+  align-items:start;
+  padding:10px 11px;
+  border:1px solid #eadfd5;
+  border-radius:12px;
+  background:#fbf6f0;
+}
+.auth-legal-consent input{
+  width:16px;
+  height:16px;
+  margin:2px 0 0;
+  accent-color:var(--red);
+}
+.auth-legal-consent label{
+  margin:0;
+  color:#5c524c;
+  font-size:10.5px;
+  line-height:1.5;
+}
+.auth-legal-consent a{
+  color:var(--red);
+  font-weight:800;
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+
+/* Editar perfil: eliminación de cuenta */
+.profile-delete-zone{
+  margin-top:14px;
+  padding-top:14px;
+  border-top:1px solid #eee3da;
+}
+.profile-delete-button{
+  width:100%;
+  min-height:42px;
+  border:1px solid #efc7c9;
+  border-radius:12px;
+  background:#fff8f8;
+  color:#b20f18;
+  font-weight:800;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  cursor:pointer;
+}
+.profile-delete-button:disabled{opacity:.55;cursor:not-allowed}
+.profile-delete-confirm{
+  border:1px solid #efc7c9;
+  border-radius:14px;
+  padding:12px;
+  background:#fff7f7;
+}
+.profile-delete-confirm strong{
+  display:block;
+  color:#9d1118;
+  font-size:12px;
+  margin-bottom:5px;
+}
+.profile-delete-confirm p{
+  margin:0 0 11px;
+  color:#6a5757;
+  font-size:10.5px;
+  line-height:1.5;
+}
+.profile-delete-confirm>div{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.profile-delete-confirm button{
+  min-height:38px;
+  border:1px solid #e1d7d0;
+  border-radius:10px;
+  background:#fff;
+  font-weight:800;
+  font-size:11px;
+  cursor:pointer;
+}
+.profile-delete-confirm button.danger{
+  border-color:#c9161f;
+  background:#c9161f;
+  color:#fff;
+}
+.profile-delete-confirm button:disabled{opacity:.55;cursor:not-allowed}
+
+@media(max-width:700px){
+  .app-footer-inner{
+    grid-template-columns:1fr;
+    gap:24px;
+    padding:28px 16px 24px;
+  }
+  .app-footer-brand p{max-width:none}
+  .legal-page{width:calc(100% - 20px);margin-top:10px}
+  .legal-page-head{grid-template-columns:40px minmax(0,1fr);gap:10px}
+  .legal-page-head>button{width:38px;height:38px;border-radius:12px}
+  .legal-content{padding:19px 16px;border-radius:20px}
+}

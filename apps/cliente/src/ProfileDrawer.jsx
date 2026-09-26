@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check, Pencil, UserRound, X } from 'lucide-react'
+import { ArrowLeft, Check, Pencil, Trash2, UserRound, X } from 'lucide-react'
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js'
 import { supabase, supabaseConfigured } from './supabase'
+
+const LEGAL_VERSION='2026-09-26'
+const formatPersonName=(value='')=>String(value||'')
+  .trim()
+  .replace(/\s+/g,' ')
+  .toLocaleLowerCase('es-MX')
+  .replace(/(^|[\s'-])(\p{L})/gu,(_match,prefix,letter)=>`${prefix}${letter.toLocaleUpperCase('es-MX')}`)
 
 const regionNames=new Intl.DisplayNames(['es'],{type:'region'})
 const flag=(code)=>String.fromCodePoint(...code.toUpperCase().split('').map(ch=>127397+ch.charCodeAt(0)))
@@ -57,17 +64,19 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
+  const [acceptedLegal,setAcceptedLegal]=useState(false)
+  const [deleteConfirm,setDeleteConfirm]=useState(false)
   const signedIn=!!session?.user
   const phonePreview=useMemo(()=>normalizedPhone(phoneCountry,phoneNumber),[phoneCountry,phoneNumber])
 
-  useEffect(()=>{setProfileName(name||'');setProfilePhone(splitPhone(phone));setProfileEmail(session?.user?.email||'')},[name,phone,session?.user?.id,session?.user?.email])
+  useEffect(()=>{setProfileName(formatPersonName(name||''));setProfilePhone(splitPhone(phone));setProfileEmail(session?.user?.email||'')},[name,phone,session?.user?.id,session?.user?.email])
   useEffect(()=>{
     const key=(e)=>{if(e.key==='Escape'&&!busy)onClose()}
     window.addEventListener('keydown',key)
     return ()=>window.removeEventListener('keydown',key)
   },[busy,onClose])
   const clearMessages=()=>{setError('');setNotice('')}
-  const showRegister=()=>{clearMessages();setRegisterEmail(email);setView('register')}
+  const showRegister=()=>{clearMessages();setAcceptedLegal(false);setRegisterEmail(email);setView('register')}
   const showLogin=()=>{clearMessages();setView('login')}
 
   const login=async(e)=>{
@@ -93,13 +102,23 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(registerEmail.trim())){setError('Escribe un correo electrónico válido.');return}
     if(registerPassword.length<8){setError('La contraseña debe tener al menos 8 caracteres.');return}
     if(registerPassword!==confirmPassword){setError('Las contraseñas no coinciden.');return}
+    if(!acceptedLegal){setError('Debes aceptar los Términos y condiciones y la Política de privacidad.');return}
+    const normalizedName=formatPersonName(fullName)
+    const acceptedAt=new Date().toISOString()
     setBusy(true)
     try{
       const {data,error:authError}=await supabase.auth.signUp({
         email:registerEmail.trim().toLowerCase(),password:registerPassword,
         options:{
           emailRedirectTo:window.location.origin+window.location.pathname,
-          data:{full_name:fullName.trim(),phone_e164:phonePreview,phone_country:phoneCountry},
+          data:{
+            full_name:normalizedName,
+            phone_e164:phonePreview,
+            phone_country:phoneCountry,
+            legal_version:LEGAL_VERSION,
+            terms_accepted_at:acceptedAt,
+            privacy_accepted_at:acceptedAt,
+          },
         },
       })
       if(authError)throw authError
@@ -115,9 +134,11 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
     if(profileName.trim().length<2){setError('Escribe tu nombre completo.');return}
     if(!validPhone(profilePhone.country,profilePhone.number)){setError('Introduce un número de teléfono válido.');return}
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileEmail.trim())){setError('Escribe un correo electrónico válido.');return}
+    const normalizedName=formatPersonName(profileName)
     setBusy(true)
     try{
-      await onSave({fullName:profileName,phoneNumber:normalizedPhone(profilePhone.country,profilePhone.number)})
+      await onSave({fullName:normalizedName,phoneNumber:normalizedPhone(profilePhone.country,profilePhone.number)})
+      setProfileName(normalizedName)
       const nextEmail=profileEmail.trim().toLowerCase()
       if(nextEmail!==String(session.user.email||'').toLowerCase()){
         const {error:emailError}=await supabase.auth.updateUser({email:nextEmail},{emailRedirectTo:window.location.origin+window.location.pathname})
@@ -139,6 +160,20 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
     finally{setBusy(false)}
   }
 
+  const deleteAccount=async()=>{
+    clearMessages()
+    if(!deleteConfirm){setDeleteConfirm(true);return}
+    if(!supabase||!session?.user?.id){setError('No encontramos una sesión activa.');return}
+    setBusy(true)
+    try{
+      const {error:deleteError}=await supabase.rpc('delete_my_account')
+      if(deleteError)throw deleteError
+      try{await supabase.auth.signOut({scope:'local'})}catch{/* La cuenta ya fue eliminada. */}
+      onClose()
+    }catch(err){setError(err.message||'No pudimos eliminar tu cuenta. Intenta de nuevo.')}
+    finally{setBusy(false)}
+  }
+
   return <div className="profile-drawer-overlay" onClick={onClose} role="presentation">
     <aside className="profile-drawer auth-drawer" onClick={e=>e.stopPropagation()} aria-label="Cuenta y perfil" role="dialog" aria-modal="true">
       <div className="profile-drawer-head">
@@ -153,16 +188,16 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
       {signedIn ? <>
         <div className="profile-drawer-user">
           <div className="profile-drawer-avatar"><UserRound size={30}/></div>
-          <div><b>{name||'Cliente Chi-nito'}</b><span>{session.user.email}</span></div>
+          <div><b>{formatPersonName(name)||'Cliente Chi-nito'}</b><span>{session.user.email}</span></div>
         </div>
         {!editingProfile ? <>
           <div className="profile-static-info">
-            <div><small>Nombre completo</small><strong>{name||'Sin registrar'}</strong></div>
+            <div><small>Nombre completo</small><strong>{formatPersonName(name)||'Sin registrar'}</strong></div>
             <div><small>Número de teléfono</small><strong>{phone||'Sin registrar'}</strong></div>
             <div><small>Correo electrónico</small><strong>{session.user.email||'Sin registrar'}</strong></div>
             <div className="profile-cashback-balance"><small>Cashback</small><strong>{cashbackLoading?'Consultando…':`$${cashbackBalance.toFixed(2)}`}</strong><span>Recibes $1 por cada $10 al completar un pedido.</span></div>
           </div>
-          <button className="profile-drawer-edit" type="button" onClick={()=>{clearMessages();setProfileName(name||'');setProfilePhone(splitPhone(phone));setProfileEmail(session.user.email||'');setEditingProfile(true)}}><Pencil size={15}/> Editar perfil</button>
+          <button className="profile-drawer-edit" type="button" onClick={()=>{clearMessages();setProfileName(formatPersonName(name||''));setProfilePhone(splitPhone(phone));setProfileEmail(session.user.email||'');setEditingProfile(true)}}><Pencil size={15}/> Editar perfil</button>
         </> : <>
           <button className="auth-back" onClick={()=>{clearMessages();setEditingProfile(false)}} type="button"><ArrowLeft size={15}/> Volver a mi perfil</button>
           <form className="profile-drawer-fields" onSubmit={saveProfile}>
@@ -175,6 +210,13 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
             <label>Correo electrónico<input type="email" value={profileEmail} onChange={e=>setProfileEmail(e.target.value)} autoComplete="email" required /></label>
             <button className="primary profile-drawer-save" type="submit" disabled={busy}>{busy?'Guardando…':'Guardar cambios'}</button>
           </form>
+          <div className="profile-delete-zone">
+            {!deleteConfirm ? <button className="profile-delete-button" type="button" disabled={busy} onClick={deleteAccount}><Trash2 size={15}/> Eliminar cuenta</button> : <div className="profile-delete-confirm">
+              <strong>¿Eliminar tu cuenta definitivamente?</strong>
+              <p>Se eliminarán tu acceso y los datos de tu perfil. Esta acción no se puede deshacer.</p>
+              <div><button type="button" onClick={()=>setDeleteConfirm(false)} disabled={busy}>Cancelar</button><button className="danger" type="button" onClick={deleteAccount} disabled={busy}>{busy?'Eliminando…':'Sí, eliminar cuenta'}</button></div>
+            </div>}
+          </div>
         </>}
         <button className="profile-drawer-logout" onClick={logout} type="button" disabled={busy}>Cerrar sesión</button>
       </> : view==='login' ? <>
@@ -198,6 +240,10 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
           <label>Correo electrónico<input type="email" inputMode="email" value={registerEmail} onChange={e=>setRegisterEmail(e.target.value)} placeholder="tu@correo.com" autoComplete="email" required /></label>
           <label>Contraseña<input type="password" value={registerPassword} onChange={e=>setRegisterPassword(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" minLength={8} required /></label>
           <label>Confirmar contraseña<input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="Repite tu contraseña" autoComplete="new-password" minLength={8} required /></label>
+          <div className="auth-legal-consent">
+            <input id="accept-legal" type="checkbox" checked={acceptedLegal} onChange={e=>setAcceptedLegal(e.target.checked)} required />
+            <label htmlFor="accept-legal">Acepto los <a href="#terms" target="_blank" rel="noreferrer">Términos y condiciones</a> y la <a href="#privacy" target="_blank" rel="noreferrer">Política de privacidad</a>.</label>
+          </div>
           <button className="primary profile-drawer-save" type="submit" disabled={busy||!supabaseConfigured}>{busy?'Creando cuenta…':'Registrarme'} <Check size={15}/></button>
         </form>
         <p className="profile-drawer-note">Tu sesión permanecerá iniciada en este dispositivo mientras sea válida y no cierres sesión.</p>

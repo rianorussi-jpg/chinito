@@ -117,8 +117,28 @@ const itemUnitPrice=(item)=> item.kind==='configured'
 
 const formatExtras = (extras=[]) => extras.map(e => `${e.quantity && e.quantity > 1 ? `${e.quantity}x ` : ''}${e.name}`).join(', ')
 
+const CART_STORAGE_KEY='chinito_cart_v1'
+const formatPersonName=(value='')=>String(value||'')
+  .trim()
+  .replace(/\s+/g,' ')
+  .toLocaleLowerCase('es-MX')
+  .replace(/(^|[\s'-])(\p{L})/gu,(_match,prefix,letter)=>`${prefix}${letter.toLocaleUpperCase('es-MX')}`)
+const loadStoredCart=()=>{
+  if(typeof window==='undefined')return []
+  try{
+    const saved=JSON.parse(window.localStorage.getItem(CART_STORAGE_KEY)||'[]')
+    return Array.isArray(saved)?saved:[]
+  }catch{return []}
+}
+const screenFromHash=()=>{
+  if(typeof window==='undefined')return 'home'
+  if(window.location.hash==='#privacy')return 'privacy'
+  if(window.location.hash==='#terms')return 'terms'
+  return 'home'
+}
+
 function App(){
-  const [screen,setScreen]=useState('home')
+  const [screen,setScreen]=useState(screenFromHash)
   const [product,setProduct]=useState(PRODUCTOS[2])
   const [base,setBase]=useState(BASES[0])
   const [guisados,setGuisados]=useState([GUISADOS[1]])
@@ -129,7 +149,7 @@ function App(){
   const [session,setSession]=useState(null)
   const [authReady,setAuthReady]=useState(!supabaseConfigured)
   const [authIntent,setAuthIntent]=useState('profile')
-  const [cartItems,setCartItems]=useState([])
+  const [cartItems,setCartItems]=useState(loadStoredCart)
   const [name,setName]=useState('')
   const [phone,setPhone]=useState('')
   const [pickup,setPickup]=useState('Lo antes posible · 20–30 min')
@@ -144,6 +164,23 @@ function App(){
   const [catalog,setCatalog]=useState({})
   const [catalogRows,setCatalogRows]=useState(null)
   const [storeSettings,setStoreSettings]=useState(null)
+
+  // Política y términos funcionan como páginas internas accesibles por hash.
+  useEffect(()=>{
+    const syncLegalRoute=()=>{
+      if(window.location.hash==='#privacy')setScreen('privacy')
+      else if(window.location.hash==='#terms')setScreen('terms')
+      else setScreen(current=>current==='privacy'||current==='terms'?'home':current)
+    }
+    window.addEventListener('hashchange',syncLegalRoute)
+    return ()=>window.removeEventListener('hashchange',syncLegalRoute)
+  },[])
+
+  // Conserva el carrito aunque el cliente recargue o vuelva a abrir la app.
+  useEffect(()=>{
+    try{window.localStorage.setItem(CART_STORAGE_KEY,JSON.stringify(cartItems))}
+    catch(err){console.warn('No se pudo guardar el carrito:',err)}
+  },[cartItems])
 
   // Una sola sesión de Supabase Auth para toda la app, con renovación automática.
   // getSession recupera la sesión guardada al abrir o recargar la página.
@@ -177,7 +214,7 @@ function App(){
       if(error) console.warn('No se pudo cargar el perfil:',error.message)
       const fallbackName=user.user_metadata?.full_name||''
       const fallbackPhone=user.user_metadata?.phone_e164||''
-      const fullName=data?.full_name||fallbackName
+      const fullName=formatPersonName(data?.full_name||fallbackName)
       const customerPhone=data?.phone||fallbackPhone
       setName(fullName)
       setPhone(customerPhone)
@@ -232,12 +269,13 @@ function App(){
 
   const saveCustomerProfile=async({fullName,phoneNumber})=>{
     if(!supabase||!session?.user?.id)throw new Error('Inicia sesión para guardar tus datos.')
+    const normalizedName=formatPersonName(fullName)
     const {error}=await supabase.from('customer_profiles').upsert({
-      id:session.user.id,full_name:fullName.trim(),phone:phoneNumber,
+      id:session.user.id,full_name:normalizedName,phone:phoneNumber,
     },{onConflict:'id'})
     if(error)throw error
-    setName(fullName.trim());setPhone(phoneNumber)
-    const {error:metadataError}=await supabase.auth.updateUser({data:{full_name:fullName.trim(),phone_e164:phoneNumber}})
+    setName(normalizedName);setPhone(phoneNumber)
+    const {error:metadataError}=await supabase.auth.updateUser({data:{full_name:normalizedName,phone_e164:phoneNumber}})
     if(metadataError)console.warn('El perfil se guardó, pero no se actualizó la copia de respaldo:',metadataError.message)
   }
 
@@ -379,6 +417,7 @@ function App(){
     setLastOrder(created)
     setCashbackBalance(Math.max(0,Number(created?.cashback_balance||0)))
     setRedeemCashback(false)
+    setCartItems([])
     setPlaced(true)
   }
 
@@ -392,13 +431,20 @@ function App(){
   const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
   const cartTotal=useMemo(()=>displayCart.reduce((sum,item)=>sum+(itemUnitPrice(item)*item.quantity),0),[displayCart])
   const cashbackDiscount=redeemCashback?Math.round(Math.min(cashbackBalance,cartTotal)*100)/100:0
+  const goHome=()=>{
+    if(typeof window!=='undefined'&&window.location.hash){
+      window.history.replaceState(null,'',`${window.location.pathname}${window.location.search}`)
+    }
+    setScreen('home')
+    window.scrollTo(0,0)
+  }
 
   if(placed) return <Success order={lastOrder} onReset={()=>{setPlaced(false);setLastOrder(null);setScreen('home');setCartItems([])}} />
 
   return <div className="app-shell">
     {screen!=='builder' && screen!=='cart' && <header className="topbar">
       <button className="icon-btn profile-btn" onClick={()=>{setAuthIntent('profile');setProfileOpen(true)}} aria-label="Ver perfil"><UserRound size={23}/></button>
-      <div className="brand-mini" onClick={()=>setScreen('home')}><img src="/logo.jpg" alt="Chi-nito"/></div>
+      <div className="brand-mini" onClick={goHome}><img src="/logo.jpg" alt="Chi-nito"/></div>
       <div className="topbar-spacer" aria-hidden="true" />
     </header>}
 
@@ -407,6 +453,8 @@ function App(){
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
       {cartOpen && <CartSheet items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
     </>}
+    {screen==='privacy' && <LegalPage type="privacy" onBack={goHome} />}
+    {screen==='terms' && <LegalPage type="terms" onBack={goHome} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='cart' && !session?.user && authReady && <div className="auth-checkout-gate"><p>Inicia sesión para continuar con tu pedido.</p><button className="primary" onClick={()=>{setScreen('home');setAuthIntent('checkout');setProfileOpen(true)}}>Iniciar sesión</button></div>}
     {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
@@ -414,7 +462,7 @@ function App(){
     {profileOpen && <ProfileDrawer
       session={session}
       intent={authIntent}
-      name={name}
+      name={formatPersonName(name)}
       phone={phone}
       cashbackBalance={cashbackBalance}
       cashbackLoading={cashbackLoading}
@@ -530,6 +578,25 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
       </div>
     </section>
 
+    <footer className="app-footer">
+      <div className="app-footer-inner">
+        <div className="app-footer-brand">
+          <img src="/logo.jpg" alt="Chi-nito" />
+          <p>Chi-nito hace más fácil pedir, personalizar tu comida y recogerla en sucursal, con tu cuenta y cashback siempre disponibles.</p>
+        </div>
+        <div className="app-footer-links">
+          <strong>Información</strong>
+          <a href="#privacy">Política de privacidad</a>
+          <a href="#terms">Términos y condiciones</a>
+        </div>
+        <div className="app-footer-pickup">
+          <strong>Solo pickup</strong>
+          <span>Haz tu pedido en línea y recógelo en sucursal.</span>
+        </div>
+      </div>
+      <div className="app-footer-bottom"><span>© 2026 Chi-nito. Todos los derechos reservados.</span></div>
+    </footer>
+
     {sodaOpen && <div className="soda-sheet-overlay" onClick={()=>setSodaOpen(false)}>
       <section className="soda-sheet" onClick={e=>e.stopPropagation()} aria-label="Elegir sabor de refresco">
         <div className="cart-sheet-handle" />
@@ -550,6 +617,36 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
           })}
         </div>
       </section>
+    </div>}
+  </main>
+}
+
+function LegalPage({type,onBack}){
+  const privacy=type==='privacy'
+  return <main className="legal-page">
+    <div className="legal-page-head">
+      <button type="button" onClick={onBack} aria-label="Volver"><ArrowLeft size={20}/></button>
+      <div><span>CHI-NITO</span><h1>{privacy?'Política de privacidad':'Términos y condiciones'}</h1><p>Última actualización: 26 de septiembre de 2026</p></div>
+    </div>
+    {privacy ? <div className="legal-content">
+      <section><h2>1. Qué información recopilamos</h2><p>Cuando creas una cuenta o realizas un pedido podemos tratar tu nombre, número de teléfono, correo electrónico, identificadores de cuenta, información de tus pedidos, saldo y movimientos de cashback, así como información técnica necesaria para mantener tu sesión y el funcionamiento de la app.</p></section>
+      <section><h2>2. Para qué usamos tus datos</h2><p>Usamos esta información para crear y administrar tu cuenta, identificar tus pedidos, preparar y entregar pedidos para recoger, mantener tu historial operativo, calcular y permitir el uso de cashback, atender solicitudes relacionadas con tu cuenta y proteger la seguridad del servicio.</p></section>
+      <section><h2>3. Proveedores tecnológicos</h2><p>La app utiliza servicios tecnológicos de terceros para operar, incluyendo infraestructura de alojamiento y servicios de autenticación y base de datos. Estos proveedores procesan información únicamente en la medida necesaria para prestar sus servicios a Chi-nito.</p></section>
+      <section><h2>4. Sesión y almacenamiento local</h2><p>Podemos guardar información técnica en tu navegador para mantener tu sesión iniciada y conservar tu carrito aunque recargues la página. Puedes eliminar estos datos desde la configuración de tu navegador.</p></section>
+      <section><h2>5. Conservación y eliminación</h2><p>Conservamos la información de tu cuenta mientras permanezca activa o mientras sea necesaria para operar el servicio. Desde Editar perfil puedes solicitar la eliminación de tu cuenta. Al eliminarla se borran tu acceso y perfil; ciertos datos transaccionales de pedidos pueden conservarse de forma desvinculada de tu cuenta cuando sean necesarios para fines operativos, contables, de seguridad o cumplimiento aplicable.</p></section>
+      <section><h2>6. Tus opciones</h2><p>Puedes consultar y actualizar tus datos desde tu perfil y eliminar tu cuenta desde la misma sección. También puedes cerrar sesión en cualquier momento.</p></section>
+      <section><h2>7. Seguridad</h2><p>Aplicamos medidas técnicas y de acceso razonables para proteger la información. Ningún sistema conectado a internet puede garantizar seguridad absoluta, por lo que también es importante que mantengas tu contraseña privada.</p></section>
+      <section><h2>8. Cambios a esta política</h2><p>Podemos actualizar esta política cuando cambie la app, sus funciones o nuestras prácticas. La versión vigente se mostrará siempre en esta página.</p></section>
+    </div> : <div className="legal-content">
+      <section><h2>1. Uso de la app</h2><p>Chi-nito permite consultar el menú, personalizar productos, crear pedidos para recoger en sucursal y administrar beneficios asociados a tu cuenta. Al registrarte y usar la app aceptas estos términos.</p></section>
+      <section><h2>2. Cuenta</h2><p>Debes proporcionar información correcta y mantener la confidencialidad de tu contraseña. Eres responsable del uso de tu cuenta mientras tu sesión permanezca iniciada en un dispositivo.</p></section>
+      <section><h2>3. Menú, precios y disponibilidad</h2><p>Los productos, ingredientes, precios y disponibilidad pueden cambiar. El importe mostrado en el checkout al momento de confirmar es el que corresponde al pedido, salvo un error evidente que requiera corrección antes de prepararlo.</p></section>
+      <section><h2>4. Pedidos y pickup</h2><p>Los pedidos realizados en la app son para recoger en sucursal. Los horarios mostrados son estimados y pueden variar según la carga de cocina, disponibilidad de productos u otras circunstancias operativas.</p></section>
+      <section><h2>5. Pagos</h2><p>La app puede ofrecer las formas de pago que estén habilitadas en cada momento. La disponibilidad de un método no garantiza que permanezca activo de forma permanente.</p></section>
+      <section><h2>6. Cashback</h2><p>Cuando el programa esté activo, acumulas $1 de cashback por cada $10 completos correspondientes a un pedido que se complete. El saldo disponible puede aplicarse en el checkout hasta el límite permitido por el total del pedido. Los movimientos pueden ajustarse cuando un pedido sea cancelado, reembolsado o corregido.</p></section>
+      <section><h2>7. Cancelaciones y reembolsos</h2><p>Las solicitudes de cancelación o reembolso se revisan de acuerdo con el estado del pedido, su preparación y el medio de pago utilizado. Una vez que cocina ha avanzado en la preparación, puede no ser posible cancelar íntegramente el pedido.</p></section>
+      <section><h2>8. Eliminación de cuenta</h2><p>Puedes eliminar tu cuenta desde Editar perfil. La eliminación desactiva tu acceso y elimina los datos de perfil asociados; algunos registros de pedidos pueden conservarse de forma desvinculada cuando resulte necesario por razones operativas, contables, de seguridad o cumplimiento aplicable.</p></section>
+      <section><h2>9. Cambios al servicio</h2><p>Podemos modificar funciones, beneficios, horarios, disponibilidad o estos términos. La versión vigente se mostrará en esta página con su fecha de actualización.</p></section>
     </div>}
   </main>
 }
@@ -639,6 +736,7 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
 function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,onBack,onPlace,placing,placeError}){
   const finalTotal=Math.max(0,total-cashbackDiscount)
   const itemCount=items.reduce((sum,item)=>sum+Number(item.quantity||0),0)
+  const displayName=formatPersonName(name)
 
   return <main className="page cart-page checkout-page checkout-v2">
     <header className="checkout-topline checkout-v2-top">
@@ -663,7 +761,7 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
             <div><h2>Datos para recoger</h2><p>Usaremos los datos guardados en tu cuenta.</p></div>
           </div>
           <div className="checkout-contact-strip">
-            <div><span>Nombre</span><strong>{name||'Completa tu perfil'}</strong></div>
+            <div><span>Nombre</span><strong>{displayName||'Completa tu perfil'}</strong></div>
             <div><span>Teléfono</span><strong>{phone||'Completa tu perfil'}</strong></div>
           </div>
         </section>
