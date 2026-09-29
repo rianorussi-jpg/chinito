@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BarChart3, CheckCircle2, Clock3, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, X, ImagePlus } from 'lucide-react'
+import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, X, ImagePlus } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
@@ -7,6 +7,21 @@ const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,pay
 const itemSummary=(o)=>(o.order_items||[]).map(i=>`${i.quantity>1?`${i.quantity}× `:''}${i.name}`).join(' + ') || 'Sin productos'
 const pickupShort=(label='')=>label.replace('Hoy, ','').replace('Lo antes posible · ','ASAP · ')
 const money=(n)=>Number(n||0).toLocaleString('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0})
+const localDateValue=(date=new Date())=>{
+ const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,'0'),d=String(date.getDate()).padStart(2,'0')
+ return `${y}-${m}-${d}`
+}
+const dateBounds=(value)=>{
+ const [y,m,d]=String(value).split('-').map(Number)
+ const start=new Date(y,m-1,d,0,0,0,0)
+ const end=new Date(y,m-1,d+1,0,0,0,0)
+ return {start,end}
+}
+const dateLabel=(value)=>{
+ const [y,m,d]=String(value).split('-').map(Number)
+ return new Intl.DateTimeFormat('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date(y,m-1,d))
+}
+
 
 export default function App(){
  const [section,setSection]=useState('Resumen')
@@ -18,6 +33,7 @@ export default function App(){
  const [authReady,setAuthReady]=useState(false)
  const [authError,setAuthError]=useState('')
  const [loading,setLoading]=useState(true)
+ const [selectedDate,setSelectedDate]=useState(()=>localDateValue())
 
  const validateSession=useCallback(async(nextSession)=>{
    if(!nextSession || !supabase){ setSession(null); setAuthReady(true); return }
@@ -43,9 +59,9 @@ export default function App(){
  const loadData=useCallback(async()=>{
    if(!supabase || !session) return
    setLoading(true)
-   const start=new Date(); start.setHours(0,0,0,0)
+   const {start,end}=dateBounds(selectedDate)
    const [ordersRes,menuRes,settingsRes]=await Promise.all([
-     supabase.from('orders').select(orderSelect).gte('created_at',start.toISOString()).order('created_at',{ascending:false}),
+     supabase.from('orders').select(orderSelect).gte('created_at',start.toISOString()).lt('created_at',end.toISOString()).order('created_at',{ascending:false}),
      supabase.from('menu_items').select('*').order('sort_order',{ascending:true}),
      supabase.from('store_settings').select('*').eq('id',1).maybeSingle(),
    ])
@@ -53,7 +69,7 @@ export default function App(){
    if(menuRes.data) setMenu(menuRes.data)
    if(settingsRes.data) setSettings(settingsRes.data)
    setLoading(false)
- },[session])
+ },[session,selectedDate])
 
  useEffect(()=>{loadData()},[loadData])
  useEffect(()=>{
@@ -76,9 +92,9 @@ export default function App(){
 
  return <div className="admin-shell">
   <aside><div className="logo-wrap"><img src="/logo.jpg" alt="Chi-nito"/><div><b>CHI-NITO</b><span>Panel</span></div></div><nav>{nav.map(([n,I])=><button key={n} onClick={()=>setSection(n)} className={section===n?'active':''}><I size={19}/>{n}</button>)}</nav><div className="aside-foot"><span>Sucursal</span><b>{settings?.store_name||'Chi-nito Centro'}</b><small>Solo pickup</small><button className="logout-btn" onClick={()=>supabase.auth.signOut()}><LogOut size={15}/> Cerrar sesión</button></div></aside>
-  <main><header><div><span className="eyebrow">ADMINISTRACIÓN</span><h1>{section}</h1></div><div className="live"><i/> {loading?'Actualizando…':'Supabase conectado'}</div></header>
-   {section==='Resumen'&&<Dashboard orders={orders} active={active} settings={settings} setSection={setSection}/>} 
-   {section==='Pedidos'&&<Orders orders={orders} onAdvance={advanceOrder}/>} 
+  <main><header><div><span className="eyebrow">ADMINISTRACIÓN</span><h1>{section}</h1></div><div className="panel-header-actions">{['Resumen','Pedidos'].includes(section)&&<DateNavigator value={selectedDate} onChange={setSelectedDate}/>}<div className="live"><i/> {loading?'Actualizando…':'Supabase conectado'}</div></div></header>
+   {section==='Resumen'&&<Dashboard orders={orders} active={active} settings={settings} setSection={setSection} selectedDate={selectedDate}/>} 
+   {section==='Pedidos'&&<Orders orders={orders} onAdvance={advanceOrder} selectedDate={selectedDate}/>} 
    {section==='Menú'&&<Menu menu={menu} q={q} setQ={setQ} onToggle={toggleMenu} onSaved={loadData}/>} 
    {section==='Disponibilidad'&&<Availability menu={menu} onToggle={toggleMenu}/>} 
    {section==='Configuración'&&<SettingsPage settings={settings} setSettings={setSettings}/>} 
@@ -86,7 +102,7 @@ export default function App(){
  </div>
 
  async function advanceOrder(order){
-   const next=order.status==='Nuevo'?'Preparando':order.status==='Preparando'?'Listo':order.status==='Listo'?'Entregado':order.status
+   const next=(order.status==='Nuevo'||order.status==='Preparando')?'Listo':order.status==='Listo'?'Entregado':order.status
    if(next===order.status) return
    const {error}=await supabase.from('orders').update({status:next}).eq('id',order.id)
    if(!error) setOrders(prev=>prev.map(o=>o.id===order.id?{...o,status:next}:o))
@@ -98,20 +114,26 @@ export default function App(){
  }
 }
 
-function Dashboard({orders,active,settings,setSection}){
+function DateNavigator({value,onChange}){
+ const today=localDateValue()
+ const move=(days)=>{const {start}=dateBounds(value);start.setDate(start.getDate()+days);const next=localDateValue(start);if(next<=today)onChange(next)}
+ return <div className="date-navigator"><button type="button" onClick={()=>move(-1)} aria-label="Día anterior"><ChevronLeft size={16}/></button><label><CalendarDays size={15}/><input type="date" value={value} max={today} onChange={e=>e.target.value&&onChange(e.target.value)}/></label><button type="button" onClick={()=>move(1)} disabled={value>=today} aria-label="Día siguiente"><ChevronRight size={16}/></button>{value!==today&&<button type="button" className="today" onClick={()=>onChange(today)}>Hoy</button>}</div>
+}
+
+function Dashboard({orders,active,settings,setSection,selectedDate}){
  const sales=orders.reduce((s,o)=>s+Number(o.total||0),0)
  const avg=orders.length?sales/orders.length:0
  const pending=orders.filter(o=>!['Entregado','Cancelado'].includes(o.status)).length
  return <>
- <section className="stats"><Stat icon={ShoppingBag} label="Pedidos hoy" value={orders.length} note={`${pending} activos`}/><Stat icon={BarChart3} label="Venta del día" value={money(sales)} note={`Ticket prom. ${money(avg)}`}/><Stat icon={Clock3} label="Pedidos pendientes" value={pending} note="Pickup"/><Stat icon={PackageOpen} label="Productos activos" value={active} note="Disponibles ahora"/></section>
- <div className="two-col"><section className="card"><div className="card-head"><div><span className="eyebrow">EN TIEMPO REAL</span><h2>Pedidos recientes</h2></div><button onClick={()=>setSection('Pedidos')}>Ver todos</button></div>{orders.slice(0,6).map(o=><OrderRow key={o.id} o={o}/>)}</section>
+ <section className="stats"><Stat icon={ShoppingBag} label="Pedidos del día" value={orders.length} note={`${pending} activos`}/><Stat icon={BarChart3} label="Venta del día" value={money(sales)} note={`Ticket prom. ${money(avg)}`}/><Stat icon={Clock3} label="Pedidos pendientes" value={pending} note="Pickup"/><Stat icon={PackageOpen} label="Productos activos" value={active} note="Disponibles ahora"/></section>
+ <div className="selected-day-caption"><CalendarDays size={15}/><span>{dateLabel(selectedDate)}</span></div><div className="two-col"><section className="card"><div className="card-head"><div><span className="eyebrow">HISTORIAL DEL DÍA</span><h2>Pedidos recientes</h2></div><button onClick={()=>setSection('Pedidos')}>Ver todos</button></div>{orders.slice(0,6).map(o=><OrderRow key={o.id} o={o}/>)}</section>
  <section className="card accent"><span className="eyebrow">OPERACIÓN</span><h2>{settings?.store_open?'Todo listo para recibir pedidos':'Tienda marcada como cerrada'}</h2><p>Cliente, Panel y Kitchen Mode comparten la misma operación en Supabase.</p><div className="mini-status"><CheckCircle2/><div><b>{settings?.store_open?'Tienda abierta':'Tienda cerrada'}</b><span>{settings?.opening_time||'11:00 a.m.'} – {settings?.closing_time||'9:00 p.m.'}</span></div></div><div className="mini-status"><Flame/><div><b>Cocina conectable</b><span>Pedidos sincronizados por Realtime</span></div></div></section></div>
  </>
 }
 function Stat({icon:I,label,value,note}){return <div className="stat"><i><I/></i><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}
 function OrderRow({o}){return <div className="order-row"><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>}
 
-function Orders({orders,onAdvance}){return <section className="card"><div className="card-head"><div><span className="eyebrow">PICKUP</span><h2>Pedidos de hoy</h2></div></div><div className="table-head"><span>Pedido</span><span>Contenido</span><span>Hora</span><span>Total</span><span>Estado</span></div>{orders.map(o=><div className="order-row clickable" key={o.id} onClick={()=>onAdvance(o)}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>)}{!orders.length&&<p className="hint">Todavía no hay pedidos de hoy.</p>}<p className="hint">Haz clic en un pedido para avanzar su estado.</p></section>}
+function Orders({orders,onAdvance,selectedDate}){return <section className="card"><div className="card-head"><div><span className="eyebrow">PICKUP</span><h2>Pedidos · {dateLabel(selectedDate)}</h2></div></div><div className="table-head"><span>Pedido</span><span>Contenido</span><span>Hora</span><span>Total</span><span>Estado</span></div>{orders.map(o=><div className="order-row clickable" key={o.id} onClick={()=>onAdvance(o)}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>)}{!orders.length&&<p className="hint">No hay pedidos registrados en este día.</p>}<p className="hint">Haz clic en un pedido para avanzar su estado.</p></section>}
 
 const DEFAULT_IMAGES={Base:'/img/product/arroz-frito.jpg',Guisado:'/img/product/orange-chicken.jpg',Bebida:'/img/product/refresco.jpg',Complemento:'/img/product/chinito-bites.jpg',Extra:'/img/product/arroz-frito.jpg'}
 const EDIT_CATEGORIES=['Base','Guisado','Bebida','Complemento','Extra']

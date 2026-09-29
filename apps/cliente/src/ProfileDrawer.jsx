@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check, Pencil, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, History, Pencil, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js'
 import { supabase, supabaseConfigured } from './supabase'
 
@@ -28,6 +28,13 @@ const normalizedPhone=(country,number)=>{
   }catch { return null }
 }
 const validPhone=(country,number)=>!!normalizedPhone(country,number)
+const formatOrderDate=(value)=>{
+  if(!value)return ''
+  try{return new Intl.DateTimeFormat('es-MX',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value))}
+  catch{return ''}
+}
+const customerStatusLabel=(status)=>status==='Listo'?'Listo para recoger':status==='Nuevo'?'Preparando':status
+
 const splitPhone=(saved)=>{
   try {
     const parsed=parsePhoneNumberFromString(saved||'', 'MX')
@@ -66,6 +73,10 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
   const [notice,setNotice]=useState('')
   const [acceptedLegal,setAcceptedLegal]=useState(false)
   const [deleteConfirm,setDeleteConfirm]=useState(false)
+  const [showOrders,setShowOrders]=useState(false)
+  const [orderHistory,setOrderHistory]=useState([])
+  const [ordersLoading,setOrdersLoading]=useState(false)
+  const [ordersError,setOrdersError]=useState('')
   const signedIn=!!session?.user
   const phonePreview=useMemo(()=>normalizedPhone(phoneCountry,phoneNumber),[phoneCountry,phoneNumber])
 
@@ -75,6 +86,29 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
     window.addEventListener('keydown',key)
     return ()=>window.removeEventListener('keydown',key)
   },[busy,onClose])
+  useEffect(()=>{
+    const userId=session?.user?.id
+    if(!supabase||!userId||!showOrders)return
+    let alive=true
+    const loadOrders=async()=>{
+      setOrdersLoading(true);setOrdersError('')
+      const {data,error:historyError}=await supabase.from('orders')
+        .select('id,order_number,total,status,created_at,pickup_label,order_items(id,name,quantity,variant)')
+        .eq('customer_id',userId)
+        .order('created_at',{ascending:false})
+        .limit(50)
+      if(!alive)return
+      if(historyError){setOrdersError('No pudimos cargar tus pedidos.');setOrderHistory([])}
+      else setOrderHistory(data||[])
+      setOrdersLoading(false)
+    }
+    loadOrders()
+    const channel=supabase.channel(`customer-order-history-${userId}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'orders',filter:`customer_id=eq.${userId}`},loadOrders)
+      .subscribe()
+    return ()=>{alive=false;supabase.removeChannel(channel)}
+  },[session?.user?.id,showOrders])
+
   const clearMessages=()=>{setError('');setNotice('')}
   const showRegister=()=>{clearMessages();setAcceptedLegal(false);setRegisterEmail(email);setView('register')}
   const showLogin=()=>{clearMessages();setView('login')}
@@ -177,7 +211,7 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
   return <div className="profile-drawer-overlay" onClick={onClose} role="presentation">
     <aside className="profile-drawer auth-drawer" onClick={e=>e.stopPropagation()} aria-label="Cuenta y perfil" role="dialog" aria-modal="true">
       <div className="profile-drawer-head">
-        <div><small>{intent==='checkout'?'ANTES DE CONTINUAR':'MI CUENTA'}</small><h2>{signedIn?'Tu perfil':view==='register'?'Crear cuenta':'Bienvenido'}</h2></div>
+        <div><small>{intent==='checkout'?'ANTES DE CONTINUAR':'MI CUENTA'}</small><h2>{signedIn?(showOrders?'Mis pedidos':'Tu perfil'):view==='register'?'Crear cuenta':'Bienvenido'}</h2></div>
         <button className="profile-drawer-close" type="button" onClick={onClose} aria-label="Cerrar"><X size={22}/></button>
       </div>
       {intent==='checkout'&&!signedIn&&<p className="auth-checkout-note">Para continuar a Checkout, inicia sesión o crea tu cuenta. Tu carrito se conservará.</p>}
@@ -186,39 +220,55 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
       {!supabaseConfigured&&<div className="auth-message auth-error">Falta configurar las variables de Supabase en Vercel.</div>}
 
       {signedIn ? <>
-        <div className="profile-drawer-user">
-          <div className="profile-drawer-avatar"><UserRound size={30}/></div>
-          <div><b>{formatPersonName(name)||'Cliente Chi-nito'}</b><span>{session.user.email}</span></div>
-        </div>
-        {!editingProfile ? <>
-          <div className="profile-static-info">
-            <div><small>Nombre completo</small><strong>{formatPersonName(name)||'Sin registrar'}</strong></div>
-            <div><small>Número de teléfono</small><strong>{phone||'Sin registrar'}</strong></div>
-            <div><small>Correo electrónico</small><strong>{session.user.email||'Sin registrar'}</strong></div>
-            <div className="profile-cashback-balance"><small>Cashback</small><strong>{cashbackLoading?'Consultando…':`$${cashbackBalance.toFixed(2)}`}</strong><span>Recibes $1 por cada $10 al completar un pedido.</span></div>
+        {showOrders ? <>
+          <button className="auth-back" onClick={()=>setShowOrders(false)} type="button"><ArrowLeft size={15}/> Volver a mi perfil</button>
+          <div className="profile-orders-head"><div><History size={18}/><div><b>Historial de pedidos</b><span>Últimos 50 pedidos de tu cuenta</span></div></div></div>
+          <div className="profile-orders-list">
+            {ordersLoading&&<div className="profile-orders-state">Cargando pedidos…</div>}
+            {ordersError&&<div className="profile-orders-state error">{ordersError}</div>}
+            {!ordersLoading&&!ordersError&&!orderHistory.length&&<div className="profile-orders-empty"><ShoppingBag size={28}/><b>Aún no tienes pedidos</b><span>Cuando completes tu primera orden aparecerá aquí.</span></div>}
+            {!ordersLoading&&orderHistory.map(order=><article className="profile-order-card" key={order.id}>
+              <div className="profile-order-top"><div><b>{order.order_number}</b><span>{formatOrderDate(order.created_at)}</span></div><em className={`profile-order-status ${String(order.status||'').toLowerCase()}`}>{customerStatusLabel(order.status)}</em></div>
+              <div className="profile-order-items">{(order.order_items||[]).slice(0,3).map(item=><span key={item.id}>{item.quantity>1?`${item.quantity}× `:''}{item.name}{item.variant?` · ${item.variant}`:''}</span>)}{(order.order_items||[]).length>3&&<span>+{order.order_items.length-3} producto{order.order_items.length-3===1?'':'s'} más</span>}</div>
+              <div className="profile-order-bottom"><span>{order.pickup_label||'Pickup'}</span><strong>${Number(order.total||0).toFixed(2)}</strong></div>
+            </article>)}
           </div>
-          <button className="profile-drawer-edit" type="button" onClick={()=>{clearMessages();setProfileName(formatPersonName(name||''));setProfilePhone(splitPhone(phone));setProfileEmail(session.user.email||'');setEditingProfile(true)}}><Pencil size={15}/> Editar perfil</button>
         </> : <>
-          <button className="auth-back" onClick={()=>{clearMessages();setEditingProfile(false)}} type="button"><ArrowLeft size={15}/> Volver a mi perfil</button>
-          <form className="profile-drawer-fields" onSubmit={saveProfile}>
-            <label>Nombre completo<input value={profileName} onChange={e=>setProfileName(e.target.value)} autoComplete="name" required /></label>
-            <label>Teléfono
-              <PhoneField idPrefix="profile" country={profilePhone.country} number={profilePhone.number}
-                onCountry={country=>setProfilePhone(prev=>({...prev,country}))}
-                onNumber={number=>setProfilePhone(prev=>({...prev,number}))}/>
-            </label>
-            <label>Correo electrónico<input type="email" value={profileEmail} onChange={e=>setProfileEmail(e.target.value)} autoComplete="email" required /></label>
-            <button className="primary profile-drawer-save" type="submit" disabled={busy}>{busy?'Guardando…':'Guardar cambios'}</button>
-          </form>
-          <div className="profile-delete-zone">
-            {!deleteConfirm ? <button className="profile-delete-button" type="button" disabled={busy} onClick={deleteAccount}><Trash2 size={15}/> Eliminar cuenta</button> : <div className="profile-delete-confirm">
-              <strong>¿Eliminar tu cuenta definitivamente?</strong>
-              <p>Se eliminarán tu acceso y los datos de tu perfil. Esta acción no se puede deshacer.</p>
-              <div><button type="button" onClick={()=>setDeleteConfirm(false)} disabled={busy}>Cancelar</button><button className="danger" type="button" onClick={deleteAccount} disabled={busy}>{busy?'Eliminando…':'Sí, eliminar cuenta'}</button></div>
-            </div>}
+          <div className="profile-drawer-user">
+            <div className="profile-drawer-avatar"><UserRound size={30}/></div>
+            <div><b>{formatPersonName(name)||'Cliente Chi-nito'}</b><span>{session.user.email}</span></div>
           </div>
+          {!editingProfile ? <>
+            <div className="profile-static-info">
+              <div><small>Nombre completo</small><strong>{formatPersonName(name)||'Sin registrar'}</strong></div>
+              <div><small>Número de teléfono</small><strong>{phone||'Sin registrar'}</strong></div>
+              <div><small>Correo electrónico</small><strong>{session.user.email||'Sin registrar'}</strong></div>
+              <div className="profile-cashback-balance"><small>Cashback</small><strong>{cashbackLoading?'Consultando…':`$${cashbackBalance.toFixed(2)}`}</strong><span>Recibes $1 por cada $10 al completar un pedido.</span></div>
+            </div>
+            <button className="profile-orders-button" type="button" onClick={()=>{clearMessages();setShowOrders(true)}}><History size={16}/><span><b>Ver pedidos</b><small>Consulta tu historial</small></span><ChevronRight size={17}/></button>
+            <button className="profile-drawer-edit" type="button" onClick={()=>{clearMessages();setProfileName(formatPersonName(name||''));setProfilePhone(splitPhone(phone));setProfileEmail(session.user.email||'');setEditingProfile(true)}}><Pencil size={15}/> Editar perfil</button>
+          </> : <>
+            <button className="auth-back" onClick={()=>{clearMessages();setEditingProfile(false)}} type="button"><ArrowLeft size={15}/> Volver a mi perfil</button>
+            <form className="profile-drawer-fields" onSubmit={saveProfile}>
+              <label>Nombre completo<input value={profileName} onChange={e=>setProfileName(e.target.value)} autoComplete="name" required /></label>
+              <label>Teléfono
+                <PhoneField idPrefix="profile" country={profilePhone.country} number={profilePhone.number}
+                  onCountry={country=>setProfilePhone(prev=>({...prev,country}))}
+                  onNumber={number=>setProfilePhone(prev=>({...prev,number}))}/>
+              </label>
+              <label>Correo electrónico<input type="email" value={profileEmail} onChange={e=>setProfileEmail(e.target.value)} autoComplete="email" required /></label>
+              <button className="primary profile-drawer-save" type="submit" disabled={busy}>{busy?'Guardando…':'Guardar cambios'}</button>
+            </form>
+            <div className="profile-delete-zone">
+              {!deleteConfirm ? <button className="profile-delete-button" type="button" disabled={busy} onClick={deleteAccount}><Trash2 size={15}/> Eliminar cuenta</button> : <div className="profile-delete-confirm">
+                <strong>¿Eliminar tu cuenta definitivamente?</strong>
+                <p>Se eliminarán tu acceso y los datos de tu perfil. Esta acción no se puede deshacer.</p>
+                <div><button type="button" onClick={()=>setDeleteConfirm(false)} disabled={busy}>Cancelar</button><button className="danger" type="button" onClick={deleteAccount} disabled={busy}>{busy?'Eliminando…':'Sí, eliminar cuenta'}</button></div>
+              </div>}
+            </div>
+          </>}
+          <button className="profile-drawer-logout" onClick={logout} type="button" disabled={busy}>Cerrar sesión</button>
         </>}
-        <button className="profile-drawer-logout" onClick={logout} type="button" disabled={busy}>Cerrar sesión</button>
       </> : view==='login' ? <>
         <div className="profile-drawer-intro">
           <div className="profile-drawer-avatar"><UserRound size={30}/></div>

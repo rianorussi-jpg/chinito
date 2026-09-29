@@ -38,8 +38,7 @@ export default function App(){
  const loadOrders=useCallback(async()=>{
    if(!supabase || !session)return
    setLoading(true)
-   const start=new Date(); start.setHours(0,0,0,0)
-   const {data,error}=await supabase.from('orders').select(orderSelect).gte('created_at',start.toISOString()).in('status',activeStatuses).order('created_at',{ascending:true})
+   const {data,error}=await supabase.from('orders').select(orderSelect).in('status',activeStatuses).order('created_at',{ascending:true})
    if(!error&&data)setOrders(data)
    setLoading(false)
  },[session])
@@ -65,7 +64,7 @@ export default function App(){
  const ready=useMemo(()=>orders.filter(o=>o.status==='Listo'),[orders])
 
  const advance=async(order)=>{
-   const next=order.status==='Nuevo'?'Preparando':order.status==='Preparando'?'Listo':'Entregado'
+   const next=order.status==='Listo'?'Entregado':'Listo'
    const {error}=await supabase.from('orders').update({status:next}).eq('id',order.id)
    if(!error){
      if(next==='Entregado')setOrders(prev=>prev.filter(o=>o.id!==order.id))
@@ -83,8 +82,8 @@ export default function App(){
     <section className="k-head"><div><span className="eyebrow">PEDIDOS EN TIEMPO REAL</span><h1>Kitchen Mode</h1><p>Prepara, libera y entrega pedidos desde una sola vista.</p></div><div className="k-head-actions"><div className="counters"><Counter label="Preparando" n={preparing.length}/><Counter label="Listos" n={ready.length}/></div><button className="new-order-button" onClick={()=>setNewOrderOpen(true)}><Plus size={19}/> Nuevo pedido</button></div></section>
 
     <section className="k-board">
-      <OrderLane title="Preparando" subtitle="Pedidos nuevos y en preparación" count={preparing.length} tone="prep">
-        {preparing.length?preparing.map(o=><Ticket key={o.id} order={o} advance={()=>advance(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos nuevos aparecerán aquí automáticamente."/>}
+      <OrderLane title="Preparando" subtitle="Todos los pedidos activos en preparación" count={preparing.length} tone="prep">
+        {preparing.length?preparing.map(o=><Ticket key={o.id} order={o} advance={()=>advance(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos activos aparecerán aquí automáticamente, aunque sean de días anteriores."/>}
       </OrderLane>
       <OrderLane title="Listos para recoger" subtitle="Esperando al cliente" count={ready.length} tone="ready">
         {ready.length?ready.map(o=><Ticket key={o.id} order={o} advance={()=>advance(o)}/>):<LaneEmpty icon={<Check size={34}/>} title="Nada listo todavía" text="Cuando marques un pedido como listo aparecerá en esta columna."/>}
@@ -104,10 +103,10 @@ function OrderLane({title,subtitle,count,tone,children}){
 function LaneEmpty({icon,title,text}){return <div className="lane-empty">{icon}<h3>{title}</h3><p>{text}</p></div>}
 
 function Ticket({order,advance}){
- const next=order.status==='Nuevo'?'Comenzar a preparar':order.status==='Preparando'?'Marcar como listo':'Entregar pedido'
+ const next=order.status==='Listo'?'Entregar pedido':'Marcar como listo'
  const elapsed=Math.max(0,Math.floor((Date.now()-new Date(order.created_at).getTime())/60000))
  return <article className={`ticket ${order.status.toLowerCase()}`}>
-   <div className="ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div><em>{order.status==='Nuevo'?'Nuevo':order.status}</em></div>
+   <div className="ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div><em>{order.status==='Listo'?'Listo':'Preparando'}</em></div>
    <div className="pickup"><ShoppingBag size={18}/><div><b>{order.pickup_label}</b><span>Hace {elapsed} min · {order.customer_phone}</span></div><Clock3 size={18}/></div>
    <div className="items">{(order.order_items||[]).map(i=><KitchenItem item={i} key={i.id}/>)}</div>
    <div className="ticket-actions"><button className="print" onClick={()=>window.print()}><Printer size={18}/> Imprimir</button><button className="advance" onClick={advance}>{order.status==='Listo'?<Check size={18}/>:<Flame size={18}/>} {next}</button></div>

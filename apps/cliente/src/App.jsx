@@ -140,10 +140,10 @@ const screenFromHash=()=>{
 const CUSTOMER_ORDER_SELECT='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const ACTIVE_ORDER_STATUSES=['Nuevo','Preparando','Listo']
 const customerOrderState=(status)=>{
-  if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:2}
-  if(status==='Entregado')return {label:'Entregado',eta:'Pedido completado.',step:3}
+  if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:1}
+  if(status==='Entregado')return {label:'Entregado',eta:'Pedido completado.',step:2}
   if(status==='Cancelado')return {label:'Cancelado',eta:'Este pedido fue cancelado.',step:0}
-  return {label:'Preparando',eta:'Listo en 10–15 minutos',step:1}
+  return {label:'Preparando',eta:'Listo en 10–15 minutos',step:0}
 }
 const orderIdOf=(order)=>order?.id||order?.order_id||null
 
@@ -243,6 +243,11 @@ function App(){
       .subscribe()
     return ()=>{alive=false;supabase.removeChannel(channel)}
   },[session?.user?.id])
+
+  // Al marcarse como Entregado deja de existir un pedido activo y desaparece el tracker.
+  useEffect(()=>{
+    if(screen==='tracking'&&!activeOrderLoading&&!activeOrder)setScreen('home')
+  },[screen,activeOrderLoading,activeOrder])
 
   // Los datos del cliente se guardan por usuario, no únicamente en el navegador.
   useEffect(()=>{
@@ -463,6 +468,7 @@ function App(){
       customer_phone:phone,
       pickup_label:pickup,
       payment_method:payment,
+      status:created?.status==='Listo'?'Listo':'Preparando',
       order_items:displayCart.map(item=>{
         const configured=item.kind==='configured'
         return {
@@ -952,7 +958,7 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
 
 function OrderStatusSteps({status}){
   const state=customerOrderState(status)
-  const steps=['Pedido recibido','Preparando','Listo para recoger']
+  const steps=['Preparando','Listo para recoger']
   return <div className="order-status-steps">{steps.map((label,index)=>{
     const done=state.step>index
     const current=state.step===index
