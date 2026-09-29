@@ -137,6 +137,16 @@ const screenFromHash=()=>{
   return 'home'
 }
 
+const CUSTOMER_ORDER_SELECT='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const ACTIVE_ORDER_STATUSES=['Nuevo','Preparando','Listo']
+const customerOrderState=(status)=>{
+  if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:2}
+  if(status==='Entregado')return {label:'Entregado',eta:'Pedido completado.',step:3}
+  if(status==='Cancelado')return {label:'Cancelado',eta:'Este pedido fue cancelado.',step:0}
+  return {label:'Preparando',eta:'Listo en 10–15 minutos',step:1}
+}
+const orderIdOf=(order)=>order?.id||order?.order_id||null
+
 function App(){
   const [screen,setScreen]=useState(screenFromHash)
   const [product,setProduct]=useState(PRODUCTOS[2])
@@ -156,6 +166,8 @@ function App(){
   const [payment,setPayment]=useState('online')
   const [placed,setPlaced]=useState(false)
   const [lastOrder,setLastOrder]=useState(null)
+  const [activeOrder,setActiveOrder]=useState(null)
+  const [activeOrderLoading,setActiveOrderLoading]=useState(false)
   const [placing,setPlacing]=useState(false)
   const [placeError,setPlaceError]=useState('')
   const [cashbackBalance,setCashbackBalance]=useState(0)
@@ -201,6 +213,36 @@ function App(){
     }).catch(()=>{if(mounted)setAuthReady(true)})
     return ()=>{mounted=false;subscription.unsubscribe()}
   },[])
+
+  // Pedido activo del cliente. Se mantiene sincronizado con Cocina en tiempo real.
+  useEffect(()=>{
+    const userId=session?.user?.id
+    if(!supabase||!userId){setActiveOrder(null);setActiveOrderLoading(false);return}
+    let alive=true
+    const loadActiveOrder=async()=>{
+      setActiveOrderLoading(true)
+      const {data,error}=await supabase.from('orders')
+        .select(CUSTOMER_ORDER_SELECT)
+        .eq('customer_id',userId)
+        .in('status',ACTIVE_ORDER_STATUSES)
+        .order('created_at',{ascending:false})
+        .limit(1)
+        .maybeSingle()
+      if(!alive)return
+      if(error)console.warn('No se pudo cargar el pedido activo:',error.message)
+      else setActiveOrder(data||null)
+      setActiveOrderLoading(false)
+    }
+    loadActiveOrder()
+    const channel=supabase.channel(`customer-active-order-${userId}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'orders',filter:`customer_id=eq.${userId}`},payload=>{
+        const changed=payload.new||payload.old
+        setLastOrder(prev=>orderIdOf(prev)&&orderIdOf(prev)===changed?.id?{...prev,...changed}:prev)
+        loadActiveOrder()
+      })
+      .subscribe()
+    return ()=>{alive=false;supabase.removeChannel(channel)}
+  },[session?.user?.id])
 
   // Los datos del cliente se guardan por usuario, no únicamente en el navegador.
   useEffect(()=>{
@@ -414,7 +456,30 @@ function App(){
     setPlacing(false)
     if(error){setPlaceError(error.message || 'No pudimos crear el pedido.');return}
     const created=Array.isArray(data)?data[0]:data
-    setLastOrder(created)
+    const orderSnapshot={
+      ...created,
+      id:created?.order_id,
+      customer_name:formatPersonName(name),
+      customer_phone:phone,
+      pickup_label:pickup,
+      payment_method:payment,
+      order_items:displayCart.map(item=>{
+        const configured=item.kind==='configured'
+        return {
+          id:item.id,
+          item_type:item.kind,
+          name:configured?item.product.name:item.name,
+          quantity:item.quantity,
+          unit_price:itemUnitPrice(item),
+          base_name:configured?item.base?.name:null,
+          guisados:configured?item.guisados.map(g=>g.name):[],
+          extras:configured?item.extras.map(e=>({name:e.name,quantity:e.quantity||1,price:e.price})):[],
+          variant:item.variant||null,
+        }
+      }),
+    }
+    setLastOrder(orderSnapshot)
+    setActiveOrder(orderSnapshot)
     setCashbackBalance(Math.max(0,Number(created?.cashback_balance||0)))
     setRedeemCashback(false)
     setCartItems([])
@@ -439,13 +504,16 @@ function App(){
     window.scrollTo(0,0)
   }
 
-  if(placed) return <Success order={lastOrder} onReset={()=>{setPlaced(false);setLastOrder(null);setScreen('home');setCartItems([])}} />
+  if(placed){
+    const liveOrder=activeOrder&&orderIdOf(activeOrder)===orderIdOf(lastOrder)?{...lastOrder,...activeOrder,order_items:activeOrder.order_items?.length?activeOrder.order_items:lastOrder?.order_items}:{...lastOrder}
+    return <Success order={liveOrder} onReset={()=>{setPlaced(false);setLastOrder(null);setScreen('home');window.scrollTo(0,0)}} />
+  }
 
   return <div className="app-shell">
     {screen!=='builder' && screen!=='cart' && <header className="topbar">
       <button className="icon-btn profile-btn" onClick={()=>{setAuthIntent('profile');setProfileOpen(true)}} aria-label="Ver perfil"><UserRound size={23}/></button>
       <div className="brand-mini" onClick={goHome}><img src="/logo.jpg" alt="Chi-nito"/></div>
-      <div className="topbar-spacer" aria-hidden="true" />
+      {activeOrder ? <button className={`order-tracker-button ${activeOrder.status==='Listo'?'ready':''}`} onClick={()=>{setScreen('tracking');window.scrollTo(0,0)}} aria-label="Ver estado de mi pedido" title={customerOrderState(activeOrder.status).label}><Clock3 size={21}/><i /></button> : <div className="topbar-spacer" aria-hidden="true" />}
     </header>}
 
     {screen==='home' && <>
@@ -453,6 +521,7 @@ function App(){
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
       {cartOpen && <CartSheet items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
     </>}
+    {screen==='tracking' && <OrderTracker order={activeOrder} loading={activeOrderLoading} onBack={goHome} />}
     {screen==='privacy' && <LegalPage type="privacy" onBack={goHome} />}
     {screen==='terms' && <LegalPage type="terms" onBack={goHome} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
@@ -881,6 +950,44 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
   </main>
 }
 
-function Success({order,onReset}){return <div className="success-screen"><div className="success-mark"><Check size={42}/></div><span className="eyebrow">PEDIDO CONFIRMADO</span><h1>¡Tu pedido ya llegó a cocina!</h1><p>Pedido <b>{order?.order_number||'confirmado'}</b>. Kitchen Mode lo recibió en tiempo real.</p><div className="success-card"><span>Total</span><strong>${Number(order?.total||0)}</strong><small>Solo pickup</small></div><button className="primary big" onClick={onReset}>Volver al inicio</button></div>}
+function OrderStatusSteps({status}){
+  const state=customerOrderState(status)
+  const steps=['Pedido recibido','Preparando','Listo para recoger']
+  return <div className="order-status-steps">{steps.map((label,index)=>{
+    const done=state.step>index
+    const current=state.step===index
+    return <div className={`${done?'done':''} ${current?'current':''}`} key={label}><i>{done?<Check size={14}/>:index+1}</i><span>{label}</span></div>
+  })}</div>
+}
+
+function OrderItemsSummary({items=[]}){
+  return <div className="tracking-items">{items.map((item,index)=>{
+    const guisados=Array.isArray(item.guisados)?item.guisados:[]
+    const extras=Array.isArray(item.extras)?item.extras:[]
+    return <div className="tracking-item" key={item.id||`${item.name}-${index}`}><div><b>{item.quantity>1?`${item.quantity} × `:''}{item.name}</b>{item.base_name&&<span>Base: {item.base_name}</span>}{guisados.length>0&&<span>{guisados.join(' · ')}</span>}{item.variant&&<span>{item.variant}</span>}{extras.length>0&&<span>Extras: {extras.map(e=>`${e.quantity>1?`${e.quantity}× `:''}${e.name}`).join(', ')}</span>}</div><strong>${(Number(item.unit_price||0)*Number(item.quantity||1)).toFixed(2)}</strong></div>
+  })}</div>
+}
+
+function OrderTracker({order,loading,onBack}){
+  if(loading&&!order)return <main className="tracking-page"><div className="tracking-loading"><Clock3 size={28}/><b>Buscando tu pedido…</b></div></main>
+  if(!order)return <main className="tracking-page"><button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button><div className="tracking-empty"><ShoppingBag size={38}/><h1>No tienes un pedido activo</h1><p>Cuando hagas un pedido podrás seguir su avance aquí.</p><button className="primary" onClick={onBack}>Ver menú</button></div></main>
+  const state=customerOrderState(order.status)
+  return <main className="tracking-page">
+    <button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button>
+    <section className={`tracking-hero ${order.status==='Listo'?'ready':''}`}><div className="tracking-live"><i/> PEDIDO EN VIVO</div><div className="tracking-hero-main"><div><span>{order.order_number}</span><h1>{state.label}</h1><p>{state.eta}</p></div><Clock3 size={42}/></div><OrderStatusSteps status={order.status}/></section>
+    <div className="tracking-grid"><section className="tracking-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Tu pedido</h2><p>Lo que estamos preparando</p></div></div><OrderItemsSummary items={order.order_items||[]}/></section><section className="tracking-card tracking-details"><h2>Detalles</h2><div><span>Recoge a nombre de</span><b>{formatPersonName(order.customer_name||'')}</b></div><div><span>Pickup</span><b>{order.pickup_label||'Lo antes posible'}</b></div><div><span>Pago</span><b>{order.payment_method==='online'?'Pago en línea':'Pago al recoger'}</b></div><div><span>Total</span><strong>${Number(order.total||0).toFixed(2)}</strong></div></section></div>
+  </main>
+}
+
+function Success({order,onReset}){
+  const state=customerOrderState(order?.status)
+  return <main className="confirmed-page">
+    <section className={`confirmed-hero ${order?.status==='Listo'?'ready':''}`}><div className="confirmed-check"><Check size={30}/></div><span className="confirmed-kicker">PEDIDO CONFIRMADO</span><h1>{state.label}</h1><p>{state.eta}</p><div className="confirmed-order-number"><span>Número de pedido</span><strong>{order?.order_number||'Confirmado'}</strong></div><OrderStatusSteps status={order?.status}/></section>
+    <section className="confirmed-info-strip"><div><small>Pickup</small><b>{order?.pickup_label||'Lo antes posible'}</b></div><div><small>Cliente</small><b>{formatPersonName(order?.customer_name||'')}</b></div><div><small>Total</small><strong>${Number(order?.total||0).toFixed(2)}</strong></div></section>
+    <section className="confirmed-order-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Resumen del pedido</h2><p>Cocina ya recibió estos productos</p></div></div><OrderItemsSummary items={order?.order_items||[]}/></section>
+    <div className="confirmed-note"><Clock3 size={18}/><div><b>{order?.status==='Listo'?'Tu pedido ya está listo para recoger':'Tiempo estimado: 10–15 minutos'}</b><span>{order?.status==='Listo'?'Puedes pasar por tu pedido. Muéstranos tu número de orden al llegar.':'El estado se actualiza automáticamente. Cuando esté listo verás “Listo para recoger”.'}</span></div></div>
+    <button className="primary confirmed-home-button" onClick={onReset}>Volver al inicio</button>
+  </main>
+}
 
 export default App
