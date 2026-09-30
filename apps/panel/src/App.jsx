@@ -84,6 +84,7 @@ export default function App(){
  },[session,loadData])
 
  const active=useMemo(()=>menu.filter(x=>x.active).length,[menu])
+ const visibleOrders=useMemo(()=>orders.filter(o=>o.payment_method==='pickup'||o.payment_status==='paid'||o.status==='Cancelado'),[orders])
  const nav=[['Resumen',LayoutDashboard],['Pedidos',ShoppingBag],['Menú',UtensilsCrossed],['Disponibilidad',Flame],['Configuración',Settings]]
 
  if(!supabaseConfigured) return <SetupMissing app="Panel" />
@@ -93,8 +94,8 @@ export default function App(){
  return <div className="admin-shell">
   <aside><div className="logo-wrap"><img src="/logo.jpg" alt="Chi-nito"/><div><b>CHI-NITO</b><span>Panel</span></div></div><nav>{nav.map(([n,I])=><button key={n} onClick={()=>setSection(n)} className={section===n?'active':''}><I size={19}/>{n}</button>)}</nav><div className="aside-foot"><span>Sucursal</span><b>{settings?.store_name||'Chi-nito Centro'}</b><small>Solo pickup</small><button className="logout-btn" onClick={()=>supabase.auth.signOut()}><LogOut size={15}/> Cerrar sesión</button></div></aside>
   <main><header><div><span className="eyebrow">ADMINISTRACIÓN</span><h1>{section}</h1></div><div className="panel-header-actions">{['Resumen','Pedidos'].includes(section)&&<DateNavigator value={selectedDate} onChange={setSelectedDate}/>}<div className="live"><i/> {loading?'Actualizando…':'Supabase conectado'}</div></div></header>
-   {section==='Resumen'&&<Dashboard orders={orders} active={active} settings={settings} setSection={setSection} selectedDate={selectedDate}/>} 
-   {section==='Pedidos'&&<Orders orders={orders} onAdvance={advanceOrder} selectedDate={selectedDate}/>} 
+   {section==='Resumen'&&<Dashboard orders={visibleOrders} active={active} settings={settings} setSection={setSection} selectedDate={selectedDate}/>} 
+   {section==='Pedidos'&&<Orders orders={visibleOrders} onAdvance={advanceOrder} selectedDate={selectedDate}/>} 
    {section==='Menú'&&<Menu menu={menu} q={q} setQ={setQ} onToggle={toggleMenu} onSaved={loadData}/>} 
    {section==='Disponibilidad'&&<Availability menu={menu} onToggle={toggleMenu}/>} 
    {section==='Configuración'&&<SettingsPage settings={settings} setSettings={setSettings}/>} 
@@ -102,6 +103,7 @@ export default function App(){
  </div>
 
  async function advanceOrder(order){
+   if(order.payment_method==='online'&&order.payment_status!=='paid') return
    const next=(order.status==='Nuevo'||order.status==='Preparando')?'Listo':order.status==='Listo'?'Entregado':order.status
    if(next===order.status) return
    const {error}=await supabase.from('orders').update({status:next}).eq('id',order.id)
@@ -121,11 +123,12 @@ function DateNavigator({value,onChange}){
 }
 
 function Dashboard({orders,active,settings,setSection,selectedDate}){
- const sales=orders.reduce((s,o)=>s+Number(o.total||0),0)
- const avg=orders.length?sales/orders.length:0
- const pending=orders.filter(o=>!['Entregado','Cancelado'].includes(o.status)).length
+ const validOrders=orders.filter(o=>o.status!=='Cancelado'&&(o.payment_method==='pickup'||o.payment_status==='paid'))
+ const sales=validOrders.reduce((s,o)=>s+Number(o.total||0),0)
+ const avg=validOrders.length?sales/validOrders.length:0
+ const pending=validOrders.filter(o=>o.status!=='Entregado').length
  return <>
- <section className="stats"><Stat icon={ShoppingBag} label="Pedidos del día" value={orders.length} note={`${pending} activos`}/><Stat icon={BarChart3} label="Venta del día" value={money(sales)} note={`Ticket prom. ${money(avg)}`}/><Stat icon={Clock3} label="Pedidos pendientes" value={pending} note="Pickup"/><Stat icon={PackageOpen} label="Productos activos" value={active} note="Disponibles ahora"/></section>
+ <section className="stats"><Stat icon={ShoppingBag} label="Pedidos del día" value={validOrders.length} note={`${pending} activos`}/><Stat icon={BarChart3} label="Venta del día" value={money(sales)} note={`Ticket prom. ${money(avg)}`}/><Stat icon={Clock3} label="Pedidos pendientes" value={pending} note="Pickup"/><Stat icon={PackageOpen} label="Productos activos" value={active} note="Disponibles ahora"/></section>
  <div className="selected-day-caption"><CalendarDays size={15}/><span>{dateLabel(selectedDate)}</span></div><div className="two-col"><section className="card"><div className="card-head"><div><span className="eyebrow">HISTORIAL DEL DÍA</span><h2>Pedidos recientes</h2></div><button onClick={()=>setSection('Pedidos')}>Ver todos</button></div>{orders.slice(0,6).map(o=><OrderRow key={o.id} o={o}/>)}</section>
  <section className="card accent"><span className="eyebrow">OPERACIÓN</span><h2>{settings?.store_open?'Todo listo para recibir pedidos':'Tienda marcada como cerrada'}</h2><p>Cliente, Panel y Kitchen Mode comparten la misma operación en Supabase.</p><div className="mini-status"><CheckCircle2/><div><b>{settings?.store_open?'Tienda abierta':'Tienda cerrada'}</b><span>{settings?.opening_time||'11:00 a.m.'} – {settings?.closing_time||'9:00 p.m.'}</span></div></div><div className="mini-status"><Flame/><div><b>Cocina conectable</b><span>Pedidos sincronizados por Realtime</span></div></div></section></div>
  </>

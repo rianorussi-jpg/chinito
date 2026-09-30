@@ -2438,3 +2438,44 @@
 
 /* El tracker del cliente solo tiene dos estados operativos: Preparando y Listo para recoger. */
 .order-status-steps{grid-template-columns:repeat(2,1fr)}
+
+/* Stripe: estado al volver del checkout seguro */
+.stripe-return-overlay{
+  position:fixed;
+  inset:0;
+  z-index:500;
+  background:rgba(20,16,14,.48);
+  backdrop-filter:blur(7px);
+  display:grid;
+  place-items:center;
+  padding:20px;
+}
+.stripe-return-overlay>div{
+  width:min(360px,100%);
+  background:#fff;
+  border-radius:24px;
+  padding:26px 22px;
+  text-align:center;
+  box-shadow:0 24px 70px rgba(0,0,0,.22);
+}
+.stripe-return-overlay b{
+  display:block;
+  margin-top:12px;
+  font-size:18px;
+}
+.stripe-return-overlay p{
+  margin:7px 0 0;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.5;
+}
+.stripe-return-spinner{
+  width:36px;
+  height:36px;
+  display:inline-block;
+  border-radius:50%;
+  border:3px solid #f1ddd7;
+  border-top-color:var(--red);
+  animation:stripeSpin .8s linear infinite;
+}
+@keyframes stripeSpin{to{transform:rotate(360deg)}}

@@ -118,6 +118,7 @@ const itemUnitPrice=(item)=> item.kind==='configured'
 const formatExtras = (extras=[]) => extras.map(e => `${e.quantity && e.quantity > 1 ? `${e.quantity}x ` : ''}${e.name}`).join(', ')
 
 const CART_STORAGE_KEY='chinito_cart_v1'
+const STRIPE_PENDING_ORDER_KEY='chinito_pending_stripe_order_v1'
 const formatPersonName=(value='')=>String(value||'')
   .trim()
   .replace(/\s+/g,' ')
@@ -137,7 +138,7 @@ const screenFromHash=()=>{
   return 'home'
 }
 
-const CUSTOMER_ORDER_SELECT='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const CUSTOMER_ORDER_SELECT='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const ACTIVE_ORDER_STATUSES=['Nuevo','Preparando','Listo']
 const customerOrderState=(status)=>{
   if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:1}
@@ -169,6 +170,7 @@ function App(){
   const [activeOrder,setActiveOrder]=useState(null)
   const [activeOrderLoading,setActiveOrderLoading]=useState(false)
   const [placing,setPlacing]=useState(false)
+  const [stripeReturning,setStripeReturning]=useState(false)
   const [placeError,setPlaceError]=useState('')
   const [cashbackBalance,setCashbackBalance]=useState(0)
   const [cashbackLoading,setCashbackLoading]=useState(false)
@@ -225,12 +227,24 @@ function App(){
         .select(CUSTOMER_ORDER_SELECT)
         .eq('customer_id',userId)
         .in('status',ACTIVE_ORDER_STATUSES)
+        .or('payment_method.eq.pickup,payment_status.eq.paid')
         .order('created_at',{ascending:false})
         .limit(1)
         .maybeSingle()
       if(!alive)return
       if(error)console.warn('No se pudo cargar el pedido activo:',error.message)
-      else setActiveOrder(data||null)
+      else{
+        setActiveOrder(data||null)
+        if(data?.payment_method==='online'&&data?.payment_status==='paid'){
+          try{
+            const pending=JSON.parse(window.localStorage.getItem(STRIPE_PENDING_ORDER_KEY)||'null')
+            if(pending?.order_id===data.id){
+              setCartItems([])
+              window.localStorage.removeItem(STRIPE_PENDING_ORDER_KEY)
+            }
+          }catch{/* noop */}
+        }
+      }
       setActiveOrderLoading(false)
     }
     loadActiveOrder()
@@ -313,6 +327,93 @@ function App(){
     setAuthIntent('checkout')
     setProfileOpen(true)
   }
+
+  const loadOrderById=async(orderId)=>{
+    if(!supabase||!orderId)return null
+    const {data,error}=await supabase.from('orders')
+      .select(CUSTOMER_ORDER_SELECT)
+      .eq('id',orderId)
+      .maybeSingle()
+    if(error)throw error
+    return data||null
+  }
+
+  const finishSuccessfulOrder=async(orderId)=>{
+    const order=await loadOrderById(orderId)
+    if(!order)throw new Error('No pudimos cargar el pedido pagado.')
+    setLastOrder(order)
+    setActiveOrder(order)
+    setCartItems([])
+    try{window.localStorage.removeItem(STRIPE_PENDING_ORDER_KEY)}catch{/* noop */}
+    setRedeemCashback(false)
+    setCashbackBalance(prev=>Math.max(0,prev-Number(order.cashback_used||0)))
+    setPlaced(true)
+    setScreen('home')
+    window.scrollTo(0,0)
+  }
+
+  // Regreso desde Stripe Checkout. Verificamos el pago en servidor antes de mostrar el pedido confirmado.
+  useEffect(()=>{
+    if(!authReady||!session?.user||!supabase)return
+    const params=new URLSearchParams(window.location.search)
+    const stripeState=params.get('stripe')
+    if(!stripeState)return
+    let alive=true
+    const cleanUrl=()=>{
+      const next=new URLSearchParams(window.location.search)
+      next.delete('stripe');next.delete('session_id');next.delete('order_id')
+      const query=next.toString()
+      window.history.replaceState(null,'',`${window.location.pathname}${query?`?${query}`:''}${window.location.hash}`)
+    }
+    const run=async()=>{
+      if(stripeState==='success'){
+        const sessionId=params.get('session_id')
+        if(!sessionId){setPlaceError('Stripe no devolvió el identificador del pago.');cleanUrl();return}
+        setStripeReturning(true)
+        setPlaceError('')
+        const {data,error}=await supabase.functions.invoke('stripe-checkout-status',{body:{session_id:sessionId}})
+        if(!alive)return
+        if(error||!data?.paid||!data?.order_id){
+          setStripeReturning(false)
+          setScreen('cart')
+          setPlaceError(error?.message||data?.message||'Estamos verificando el pago. Actualiza la página en unos segundos.')
+          return
+        }
+        try{
+          await finishSuccessfulOrder(data.order_id)
+          cleanUrl()
+        }catch(err){
+          setScreen('cart')
+          setPlaceError(err?.message||'El pago fue aprobado, pero no pudimos cargar el pedido.')
+        }finally{
+          if(alive)setStripeReturning(false)
+        }
+        return
+      }
+
+      if(stripeState==='cancel'){
+        const orderId=params.get('order_id')
+        setStripeReturning(true)
+        if(orderId){
+          const {data,error}=await supabase.functions.invoke('cancel-stripe-checkout',{body:{order_id:orderId}})
+          if(error)console.warn('No se pudo cancelar la sesión de Stripe:',error.message)
+          if(data?.paid){
+            try{await finishSuccessfulOrder(orderId);cleanUrl()}finally{if(alive)setStripeReturning(false)}
+            return
+          }
+        }
+        if(!alive)return
+        setStripeReturning(false)
+        try{window.localStorage.removeItem(STRIPE_PENDING_ORDER_KEY)}catch{/* noop */}
+        setScreen('cart')
+        setPlaceError('Pago cancelado. Tu carrito sigue guardado para que puedas intentarlo de nuevo.')
+        cleanUrl()
+        window.scrollTo(0,0)
+      }
+    }
+    run()
+    return ()=>{alive=false}
+  },[authReady,session?.user?.id])
 
   const saveCustomerProfile=async({fullName,phoneNumber})=>{
     if(!supabase||!session?.user?.id)throw new Error('Inicia sesión para guardar tus datos.')
@@ -434,7 +535,7 @@ function App(){
     if(storeSettings && (!storeSettings.store_open || !storeSettings.pickup_enabled)){setPlaceError('La tienda no está recibiendo pedidos en este momento.');return}
     if(!session?.user){setPlaceError('Inicia sesión para confirmar tu pedido.');setScreen('home');setAuthIntent('checkout');setProfileOpen(true);return}
     if(!cartItems.length || !name.trim() || !phone.trim()){setPlaceError('Completa tu perfil antes de realizar el pedido.');return}
-    setPlacing(true)
+
     const payload=cartItems.map(item=>{
       if(item.kind==='configured') return {
         kind:'configured',
@@ -451,45 +552,69 @@ function App(){
         variant:item.variant || null,
       }
     })
-    const discount=redeemCashback?Math.round(Math.min(cashbackBalance,cartTotal)*100)/100:0
-    const {data,error}=await supabase.rpc('create_customer_order_with_cashback',{
-      p_pickup_label:pickup,
-      p_payment_method:payment,
-      p_items:payload,
-      p_cashback_to_use:discount,
-    })
-    setPlacing(false)
-    if(error){setPlaceError(error.message || 'No pudimos crear el pedido.');return}
-    const created=Array.isArray(data)?data[0]:data
-    const orderSnapshot={
-      ...created,
-      id:created?.order_id,
-      customer_name:formatPersonName(name),
-      customer_phone:phone,
-      pickup_label:pickup,
-      payment_method:payment,
-      status:created?.status==='Listo'?'Listo':'Preparando',
-      order_items:displayCart.map(item=>{
-        const configured=item.kind==='configured'
-        return {
-          id:item.id,
-          item_type:item.kind,
-          name:configured?item.product.name:item.name,
-          quantity:item.quantity,
-          unit_price:itemUnitPrice(item),
-          base_name:configured?item.base?.name:null,
-          guisados:configured?item.guisados.map(g=>g.name):[],
-          extras:configured?item.extras.map(e=>({name:e.name,quantity:e.quantity||1,price:e.price})):[],
-          variant:item.variant||null,
+    const discount=cashbackDiscount
+    setPlacing(true)
+
+    try{
+      if(payment==='online'){
+        // El importe siempre se recalcula en Supabase. Stripe nunca recibe un total enviado por el navegador.
+        const {data,error}=await supabase.functions.invoke('create-stripe-checkout',{
+          body:{pickup_label:pickup,items:payload,cashback_to_use:discount},
+        })
+        if(error)throw new Error(data?.error||error.message||'No pudimos iniciar el pago con Stripe.')
+        if(data?.paid&&data?.order_id){
+          await finishSuccessfulOrder(data.order_id)
+          return
         }
-      }),
+        if(!data?.url)throw new Error(data?.error||'Stripe no devolvió una página de pago.')
+        try{window.localStorage.setItem(STRIPE_PENDING_ORDER_KEY,JSON.stringify({order_id:data.order_id,session_id:data.session_id}))}catch{/* noop */}
+        window.location.assign(data.url)
+        return
+      }
+
+      const {data,error}=await supabase.rpc('create_customer_order_with_cashback',{
+        p_pickup_label:pickup,
+        p_payment_method:'pickup',
+        p_items:payload,
+        p_cashback_to_use:discount,
+      })
+      if(error)throw error
+      const created=Array.isArray(data)?data[0]:data
+      const orderSnapshot={
+        ...created,
+        id:created?.order_id,
+        customer_name:formatPersonName(name),
+        customer_phone:phone,
+        pickup_label:pickup,
+        payment_method:'pickup',
+        payment_status:'pending',
+        status:created?.status==='Listo'?'Listo':'Preparando',
+        order_items:displayCart.map(item=>{
+          const configured=item.kind==='configured'
+          return {
+            id:item.id,
+            item_type:item.kind,
+            name:configured?item.product.name:item.name,
+            quantity:item.quantity,
+            unit_price:itemUnitPrice(item),
+            base_name:configured?item.base?.name:null,
+            guisados:configured?item.guisados.map(g=>g.name):[],
+            extras:configured?item.extras.map(e=>({name:e.name,quantity:e.quantity||1,price:e.price})):[],
+            variant:item.variant||null,
+          }
+        }),
+      }
+      setLastOrder(orderSnapshot)
+      setActiveOrder(orderSnapshot)
+      setCashbackBalance(Math.max(0,Number(created?.cashback_balance||0)))
+      setRedeemCashback(false)
+      setCartItems([])
+      setPlaced(true)
+    }catch(err){
+      setPlaceError(err?.message||'No pudimos crear el pedido.')
+    }finally{
+      setPlacing(false)
     }
-    setLastOrder(orderSnapshot)
-    setActiveOrder(orderSnapshot)
-    setCashbackBalance(Math.max(0,Number(created?.cashback_balance||0)))
-    setRedeemCashback(false)
-    setCartItems([])
-    setPlaced(true)
   }
 
   const displayCart=useMemo(()=>cartItems.map(item=>{
@@ -501,7 +626,14 @@ function App(){
   }),[cartItems,catalog])
   const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
   const cartTotal=useMemo(()=>displayCart.reduce((sum,item)=>sum+(itemUnitPrice(item)*item.quantity),0),[displayCart])
-  const cashbackDiscount=redeemCashback?Math.round(Math.min(cashbackBalance,cartTotal)*100)/100:0
+  const cashbackDiscount=useMemo(()=>{
+    if(!redeemCashback)return 0
+    const maxDiscount=Math.round(Math.min(cashbackBalance,cartTotal)*100)/100
+    if(payment==='online'&&maxDiscount<cartTotal&&(cartTotal-maxDiscount)<10){
+      return Math.max(0,Math.round((cartTotal-10)*100)/100)
+    }
+    return maxDiscount
+  },[redeemCashback,cashbackBalance,cartTotal,payment])
   const goHome=()=>{
     if(typeof window!=='undefined'&&window.location.hash){
       window.history.replaceState(null,'',`${window.location.pathname}${window.location.search}`)
@@ -516,6 +648,7 @@ function App(){
   }
 
   return <div className="app-shell">
+    {stripeReturning&&<div className="stripe-return-overlay"><div><span className="stripe-return-spinner"/><b>Confirmando tu pago</b><p>Estamos verificando la operación con Stripe. No cierres esta ventana.</p></div></div>}
     {screen!=='builder' && screen!=='cart' && <header className="topbar">
       <button className="icon-btn profile-btn" onClick={()=>{setAuthIntent('profile');setProfileOpen(true)}} aria-label="Ver perfil"><UserRound size={23}/></button>
       <div className="brand-mini" onClick={goHome}><img src="/logo.jpg" alt="Chi-nito"/></div>
@@ -871,7 +1004,7 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
             <button type="button" className={`checkout-payment-option ${payment==='online'?'selected':''}`} onClick={()=>setPayment('online')}>
               <span className="checkout-option-radio"><i /></span>
               <span className="checkout-option-icon"><CreditCard size={20}/></span>
-              <span><strong>Pagar en línea</strong><small>Tarjeta de crédito o débito</small></span>
+              <span><strong>Pagar en línea</strong><small>Tarjeta de crédito o débito · Pago seguro con Stripe</small></span>
               <ChevronRight size={18}/>
             </button>
             <button type="button" className={`checkout-payment-option ${payment==='pickup'?'selected':''}`} onClick={()=>setPayment('pickup')}>
@@ -943,15 +1076,15 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
         <div className="checkout-summary-total"><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
         {placeError&&<p className="checkout-error">{placeError}</p>}
         <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading} onClick={onPlace}>
-          {placing?'Creando pedido…':'Confirmar pedido'} {!placing&&<ChevronRight size={18}/>}
+          {placing?(payment==='online'?'Abriendo Stripe…':'Creando pedido…'):(payment==='online'?'Continuar a pago seguro':'Confirmar pedido')} {!placing&&<ChevronRight size={18}/>}
         </button>
-        <p className="checkout-legal-note">Al confirmar, tu pedido se enviará directamente a cocina.</p>
+        <p className="checkout-legal-note">{payment==='online'?'Tu pedido aparecerá en cocina únicamente cuando Stripe confirme el pago.':'Al confirmar, tu pedido se enviará directamente a cocina.'}</p>
       </aside>
     </div>
 
     <div className="checkout-mobile-bar">
       <div><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
-      <button className="primary" disabled={!items.length||!name||!phone||placing||cashbackLoading} onClick={onPlace}>{placing?'Procesando…':'Confirmar'} <ChevronRight size={18}/></button>
+      <button className="primary" disabled={!items.length||!name||!phone||placing||cashbackLoading} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?'Pagar':'Confirmar')} <ChevronRight size={18}/></button>
     </div>
   </main>
 }

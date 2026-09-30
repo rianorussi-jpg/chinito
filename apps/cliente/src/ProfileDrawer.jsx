@@ -93,8 +93,9 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
     const loadOrders=async()=>{
       setOrdersLoading(true);setOrdersError('')
       const {data,error:historyError}=await supabase.from('orders')
-        .select('id,order_number,total,status,created_at,pickup_label,order_items(id,name,quantity,variant)')
+        .select('id,order_number,total,status,payment_method,payment_status,created_at,pickup_label,order_items(id,name,quantity,variant)')
         .eq('customer_id',userId)
+        .or('payment_method.eq.pickup,payment_status.eq.paid,status.eq.Cancelado')
         .order('created_at',{ascending:false})
         .limit(50)
       if(!alive)return

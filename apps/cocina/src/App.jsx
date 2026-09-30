@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, ChefHat, Clock3, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const activeStatuses=['Nuevo','Preparando','Listo']
 
 export default function App(){
@@ -38,7 +38,7 @@ export default function App(){
  const loadOrders=useCallback(async()=>{
    if(!supabase || !session)return
    setLoading(true)
-   const {data,error}=await supabase.from('orders').select(orderSelect).in('status',activeStatuses).order('created_at',{ascending:true})
+   const {data,error}=await supabase.from('orders').select(orderSelect).in('status',activeStatuses).or('payment_method.eq.pickup,payment_status.eq.paid').order('created_at',{ascending:true})
    if(!error&&data)setOrders(data)
    setLoading(false)
  },[session])
