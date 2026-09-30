@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 import ProfileDrawer from './ProfileDrawer'
+import StripePaymentFields from './StripePaymentFields'
 
 const BASES = [
   { id:'frito', slug:'base-arroz-frito', name:'Arroz frito', image:'/img/product/arroz-frito.jpg' },
@@ -117,6 +118,23 @@ const itemUnitPrice=(item)=> item.kind==='configured'
 
 const formatExtras = (extras=[]) => extras.map(e => `${e.quantity && e.quantity > 1 ? `${e.quantity}x ` : ''}${e.name}`).join(', ')
 
+const buildOrderPayload=(items=[])=>items.map(item=>{
+  if(item.kind==='configured') return {
+    kind:'configured',
+    catalog_slug:item.product.slug,
+    quantity:item.quantity,
+    base_slug:item.base.slug,
+    guisado_slugs:item.guisados.map(g=>g.slug||g.id),
+    extras:item.extras.map(e=>({catalog_slug:e.catalogSlug||e.id,quantity:e.quantity||1})),
+  }
+  return {
+    kind:item.kind,
+    catalog_slug:item.catalogSlug || item.refId?.replace(/-home$/,''),
+    quantity:item.quantity,
+    variant:item.variant || null,
+  }
+})
+
 const CART_STORAGE_KEY='chinito_cart_v1'
 const STRIPE_PENDING_ORDER_KEY='chinito_pending_stripe_order_v1'
 const formatPersonName=(value='')=>String(value||'')
@@ -171,6 +189,10 @@ function App(){
   const [activeOrderLoading,setActiveOrderLoading]=useState(false)
   const [placing,setPlacing]=useState(false)
   const [stripeReturning,setStripeReturning]=useState(false)
+  const [stripeCheckout,setStripeCheckout]=useState(null)
+  const [stripeCheckoutLoading,setStripeCheckoutLoading]=useState(false)
+  const [stripeCheckoutError,setStripeCheckoutError]=useState('')
+  const [stripeConfirm,setStripeConfirm]=useState(null)
   const [placeError,setPlaceError]=useState('')
   const [cashbackBalance,setCashbackBalance]=useState(0)
   const [cashbackLoading,setCashbackLoading]=useState(false)
@@ -350,6 +372,22 @@ function App(){
     setPlaced(true)
     setScreen('home')
     window.scrollTo(0,0)
+  }
+
+  const handleStripeReady=useCallback((confirmFn)=>{
+    setStripeConfirm(()=>confirmFn||null)
+  },[])
+
+  const handleStripeElementError=useCallback((message)=>{
+    setStripeCheckoutError(message||'No pudimos cargar el formulario de pago.')
+  },[])
+
+  const cancelPendingStripeCheckout=async(orderId)=>{
+    if(!supabase||!orderId)return
+    try{
+      const {data,error}=await supabase.functions.invoke('cancel-stripe-checkout',{body:{order_id:orderId}})
+      if(error&&!data?.paid)console.warn('No se pudo cancelar la sesión de Stripe:',error.message)
+    }catch(err){console.warn('No se pudo cancelar la sesión de Stripe:',err)}
   }
 
   // Regreso desde Stripe Checkout. Verificamos el pago en servidor antes de mostrar el pedido confirmado.
@@ -536,39 +574,37 @@ function App(){
     if(!session?.user){setPlaceError('Inicia sesión para confirmar tu pedido.');setScreen('home');setAuthIntent('checkout');setProfileOpen(true);return}
     if(!cartItems.length || !name.trim() || !phone.trim()){setPlaceError('Completa tu perfil antes de realizar el pedido.');return}
 
-    const payload=cartItems.map(item=>{
-      if(item.kind==='configured') return {
-        kind:'configured',
-        catalog_slug:item.product.slug,
-        quantity:item.quantity,
-        base_slug:item.base.slug,
-        guisado_slugs:item.guisados.map(g=>g.slug||g.id),
-        extras:item.extras.map(e=>({catalog_slug:e.catalogSlug||e.id,quantity:e.quantity||1})),
-      }
-      return {
-        kind:item.kind,
-        catalog_slug:item.catalogSlug || item.refId?.replace(/-home$/,''),
-        quantity:item.quantity,
-        variant:item.variant || null,
-      }
-    })
+    const payload=buildOrderPayload(cartItems)
     const discount=cashbackDiscount
     setPlacing(true)
 
     try{
       if(payment==='online'){
-        // El importe siempre se recalcula en Supabase. Stripe nunca recibe un total enviado por el navegador.
-        const {data,error}=await supabase.functions.invoke('create-stripe-checkout',{
-          body:{pickup_label:pickup,items:payload,cashback_to_use:discount},
-        })
-        if(error)throw new Error(data?.error||error.message||'No pudimos iniciar el pago con Stripe.')
-        if(data?.paid&&data?.order_id){
-          await finishSuccessfulOrder(data.order_id)
-          return
+        if(stripeCheckoutLoading)throw new Error('Espera un momento mientras preparamos el pago seguro.')
+        if(!stripeCheckout?.session_id||!stripeCheckout?.order_id||!stripeConfirm){
+          throw new Error(stripeCheckoutError||'El formulario de tarjeta todavía no está listo.')
         }
-        if(!data?.url)throw new Error(data?.error||'Stripe no devolvió una página de pago.')
-        try{window.localStorage.setItem(STRIPE_PENDING_ORDER_KEY,JSON.stringify({order_id:data.order_id,session_id:data.session_id}))}catch{/* noop */}
-        window.location.assign(data.url)
+
+        const confirmationError=await stripeConfirm()
+        if(confirmationError){
+          throw new Error(confirmationError?.message||'No pudimos confirmar el pago con Stripe.')
+        }
+
+        // Para pagos con tarjeta que no requieren salir a autenticar, confirmamos aquí mismo.
+        // Si Stripe necesita 3D Secure, return_url regresa a esta misma app y el efecto de retorno termina el flujo.
+        setStripeReturning(true)
+        let verified=null
+        for(let attempt=0;attempt<7;attempt+=1){
+          const {data,error}=await supabase.functions.invoke('stripe-checkout-status',{body:{session_id:stripeCheckout.session_id}})
+          if(error)throw new Error(data?.error||error.message||'No pudimos verificar el pago.')
+          if(data?.paid){verified=data;break}
+          await new Promise(resolve=>setTimeout(resolve,500))
+        }
+        if(!verified?.paid)throw new Error('Stripe está terminando de confirmar el pago. Inténtalo nuevamente en unos segundos.')
+        setStripeCheckout(null)
+        setStripeConfirm(null)
+        setStripeCheckoutError('')
+        await finishSuccessfulOrder(verified.order_id)
         return
       }
 
@@ -614,6 +650,7 @@ function App(){
       setPlaceError(err?.message||'No pudimos crear el pedido.')
     }finally{
       setPlacing(false)
+      setStripeReturning(false)
     }
   }
 
@@ -634,6 +671,65 @@ function App(){
     }
     return maxDiscount
   },[redeemCashback,cashbackBalance,cartTotal,payment])
+  const orderPayload=useMemo(()=>buildOrderPayload(cartItems),[cartItems])
+  const stripeDraftKey=useMemo(()=>JSON.stringify({pickup,cashback:cashbackDiscount,items:orderPayload}),[pickup,cashbackDiscount,orderPayload])
+
+  // Para mostrar la tarjeta dentro del checkout necesitamos una Checkout Session en modo Elements.
+  // Si cambia el horario, cashback o carrito, cancelamos el borrador anterior y generamos uno nuevo.
+  useEffect(()=>{
+    if(!supabase||!session?.user)return
+    let alive=true
+    let timer=null
+
+    if(screen!=='cart'||payment!=='online'||!orderPayload.length){
+      if(stripeCheckout?.order_id){
+        const staleOrderId=stripeCheckout.order_id
+        setStripeCheckout(null)
+        setStripeConfirm(null)
+        setStripeCheckoutError('')
+        cancelPendingStripeCheckout(staleOrderId)
+      }
+      return ()=>{alive=false}
+    }
+
+    if(stripeCheckout?.draftKey===stripeDraftKey&&stripeCheckout?.client_secret)return ()=>{alive=false}
+
+    timer=window.setTimeout(async()=>{
+      setStripeCheckoutLoading(true)
+      setStripeCheckoutError('')
+      setStripeConfirm(null)
+      try{
+        if(stripeCheckout?.order_id&&stripeCheckout.draftKey!==stripeDraftKey){
+          await cancelPendingStripeCheckout(stripeCheckout.order_id)
+        }
+        const {data,error}=await supabase.functions.invoke('create-stripe-checkout',{
+          body:{pickup_label:pickup,items:orderPayload,cashback_to_use:cashbackDiscount},
+        })
+        if(error)throw new Error(data?.error||error.message||'No pudimos preparar el pago con Stripe.')
+        if(!alive){
+          if(data?.order_id)cancelPendingStripeCheckout(data.order_id)
+          return
+        }
+        if(data?.paid&&data?.order_id){
+          await finishSuccessfulOrder(data.order_id)
+          return
+        }
+        if(!data?.client_secret||!data?.session_id||!data?.order_id)throw new Error('Stripe no devolvió el formulario de pago.')
+        const next={...data,draftKey:stripeDraftKey}
+        setStripeCheckout(next)
+        try{window.localStorage.setItem(STRIPE_PENDING_ORDER_KEY,JSON.stringify({order_id:data.order_id,session_id:data.session_id}))}catch{/* noop */}
+      }catch(err){
+        if(alive)setStripeCheckoutError(err?.message||'No pudimos preparar el pago con Stripe.')
+      }finally{
+        if(alive)setStripeCheckoutLoading(false)
+      }
+    },350)
+
+    return ()=>{
+      alive=false
+      if(timer)window.clearTimeout(timer)
+    }
+  },[screen,payment,session?.user?.id,stripeDraftKey])
   const goHome=()=>{
     if(typeof window!=='undefined'&&window.location.hash){
       window.history.replaceState(null,'',`${window.location.pathname}${window.location.search}`)
@@ -665,7 +761,7 @@ function App(){
     {screen==='terms' && <LegalPage type="terms" onBack={goHome} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='cart' && !session?.user && authReady && <div className="auth-checkout-gate"><p>Inicia sesión para continuar con tu pedido.</p><button className="primary" onClick={()=>{setScreen('home');setAuthIntent('checkout');setProfileOpen(true)}}>Iniciar sesión</button></div>}
-    {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
+    {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
     {profileOpen && <ProfileDrawer
       session={session}
@@ -941,7 +1037,7 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
   </div>
 }
 
-function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,onBack,onPlace,placing,placeError}){
+function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,stripeClientSecret,stripeLoading,stripeError,stripeReady,onStripeReady,onStripeError,onBack,onPlace,placing,placeError}){
   const finalTotal=Math.max(0,total-cashbackDiscount)
   const itemCount=items.reduce((sum,item)=>sum+Number(item.quantity||0),0)
   const displayName=formatPersonName(name)
@@ -1004,9 +1100,15 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
             <button type="button" className={`checkout-payment-option ${payment==='online'?'selected':''}`} onClick={()=>setPayment('online')}>
               <span className="checkout-option-radio"><i /></span>
               <span className="checkout-option-icon"><CreditCard size={20}/></span>
-              <span><strong>Pagar en línea</strong><small>Tarjeta de crédito o débito · Pago seguro con Stripe</small></span>
+              <span><strong>Pagar en línea</strong><small>Captura tu tarjeta aquí mismo · Pago seguro con Stripe</small></span>
               <ChevronRight size={18}/>
             </button>
+            {payment==='online'&&<div className="checkout-stripe-inline">
+              <div className="checkout-stripe-inline-head"><div><b>Datos de tarjeta</b><span>Tu pago se procesa de forma segura con Stripe.</span></div><span className="stripe-badge">stripe</span></div>
+              {stripeLoading&&!stripeClientSecret&&<div className="checkout-stripe-preparing"><span className="stripe-return-spinner"/><span>Preparando formulario seguro…</span></div>}
+              {stripeError&&<p className="checkout-stripe-error">{stripeError}</p>}
+              {stripeClientSecret&&<StripePaymentFields clientSecret={stripeClientSecret} onReady={onStripeReady} onError={onStripeError}/>}
+            </div>}
             <button type="button" className={`checkout-payment-option ${payment==='pickup'?'selected':''}`} onClick={()=>setPayment('pickup')}>
               <span className="checkout-option-radio"><i /></span>
               <span className="checkout-option-icon"><ShoppingBag size={20}/></span>
@@ -1075,16 +1177,16 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
         </div>
         <div className="checkout-summary-total"><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
         {placeError&&<p className="checkout-error">{placeError}</p>}
-        <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading} onClick={onPlace}>
-          {placing?(payment==='online'?'Abriendo Stripe…':'Creando pedido…'):(payment==='online'?'Continuar a pago seguro':'Confirmar pedido')} {!placing&&<ChevronRight size={18}/>}
+        <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>
+          {placing?(payment==='online'?'Procesando pago…':'Creando pedido…'):(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar pedido')} {!placing&&<ChevronRight size={18}/>}
         </button>
-        <p className="checkout-legal-note">{payment==='online'?'Tu pedido aparecerá en cocina únicamente cuando Stripe confirme el pago.':'Al confirmar, tu pedido se enviará directamente a cocina.'}</p>
+        <p className="checkout-legal-note">{payment==='online'?'Tu tarjeta se captura aquí mismo. Si tu banco solicita 3D Secure, Stripe puede abrir una verificación y regresarte automáticamente a Chi-nito.':'Al confirmar, tu pedido se enviará directamente a cocina.'}</p>
       </aside>
     </div>
 
     <div className="checkout-mobile-bar">
       <div><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
-      <button className="primary" disabled={!items.length||!name||!phone||placing||cashbackLoading} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?'Pagar':'Confirmar')} <ChevronRight size={18}/></button>
+      <button className="primary" disabled={!items.length||!name||!phone||placing||cashbackLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar')} <ChevronRight size={18}/></button>
     </div>
   </main>
 }

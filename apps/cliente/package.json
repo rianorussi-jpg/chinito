@@ -15,7 +15,8 @@
     "react": "latest",
     "react-dom": "latest",
     "@supabase/supabase-js": "latest",
-    "libphonenumber-js": "^1.11.19"
+    "libphonenumber-js": "^1.11.19",
+    "@stripe/stripe-js": "latest"
   },
   "devDependencies": {}
 }

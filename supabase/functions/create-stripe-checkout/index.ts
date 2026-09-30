@@ -85,6 +85,7 @@ Deno.serve(async(req)=>{
     const amount=Math.round(total*100)
     const session=await stripe.checkout.sessions.create({
       mode:'payment',
+      ui_mode:'elements',
       payment_method_types:['card'],
       client_reference_id:createdOrderId,
       customer_email:user.email||undefined,
@@ -104,14 +105,12 @@ Deno.serve(async(req)=>{
         description:`Chi-nito ${created.order_number}`,
         metadata:{order_id:createdOrderId,user_id:user.id},
       },
-      success_url:`${appUrl}/?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:`${appUrl}/?stripe=cancel&order_id=${encodeURIComponent(createdOrderId)}`,
+      return_url:`${appUrl}/?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
       expires_at:Math.floor(Date.now()/1000)+(30*60),
-      locale:'es',
-      submit_type:'pay',
+      locale:'es-419',
     })
 
-    if(!session.url)throw new Error('Stripe no devolvió la URL de pago.')
+    if(!session.client_secret)throw new Error('Stripe no devolvió el secreto del formulario de pago.')
     const {error:saveError}=await admin.from('orders').update({stripe_checkout_session_id:session.id})
       .eq('id',createdOrderId).eq('customer_id',user.id)
     if(saveError){
@@ -121,7 +120,7 @@ Deno.serve(async(req)=>{
 
     return json({
       paid:false,
-      url:session.url,
+      client_secret:session.client_secret,
       session_id:session.id,
       order_id:createdOrderId,
       order_number:created.order_number,

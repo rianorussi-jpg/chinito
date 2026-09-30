@@ -2479,3 +2479,84 @@
   animation:stripeSpin .8s linear infinite;
 }
 @keyframes stripeSpin{to{transform:rotate(360deg)}}
+
+/* Stripe Elements embebido dentro del checkout Chi-nito */
+.checkout-stripe-inline{
+  margin-top:2px;
+  border:1px solid #eadfd6;
+  border-radius:18px;
+  background:linear-gradient(180deg,#fff 0%,#fffaf6 100%);
+  padding:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.75);
+}
+.checkout-stripe-inline-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+  margin-bottom:12px;
+}
+.checkout-stripe-inline-head b,
+.checkout-stripe-inline-head span{display:block}
+.checkout-stripe-inline-head b{font-size:13px;color:#171313;margin-bottom:3px}
+.checkout-stripe-inline-head>div>span{font-size:10.5px;line-height:1.4;color:#7d716a}
+.stripe-badge{
+  flex:0 0 auto;
+  padding:5px 8px;
+  border-radius:8px;
+  background:#635bff;
+  color:white;
+  font-size:10px!important;
+  line-height:1!important;
+  font-weight:900;
+  letter-spacing:-.02em;
+  text-transform:none;
+}
+.checkout-stripe-preparing,
+.stripe-elements-loading{
+  min-height:86px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  color:#746a64;
+  font-size:11px;
+  text-align:center;
+}
+.checkout-stripe-preparing .stripe-return-spinner,
+.stripe-elements-loading .stripe-return-spinner{
+  width:20px;
+  height:20px;
+  border-width:2px;
+  border-color:#eadfd6;
+  border-top-color:var(--red);
+}
+.stripe-elements-shell{display:grid;gap:10px}
+.stripe-payment-element{min-height:112px}
+.stripe-secure-note{
+  display:flex;
+  align-items:flex-start;
+  gap:7px;
+  padding:9px 10px;
+  border-radius:12px;
+  background:#f7f4f1;
+  color:#756b65;
+  font-size:9.5px;
+  line-height:1.4;
+}
+.stripe-secure-note>span:first-child{font-size:11px;line-height:1.2}
+.checkout-stripe-error{
+  margin:8px 0 0;
+  padding:9px 10px;
+  border-radius:11px;
+  background:#fff0f1;
+  border:1px solid #f5cfd2;
+  color:#b7111a;
+  font-size:10.5px;
+  line-height:1.4;
+}
+@media(max-width:520px){
+  .checkout-stripe-inline{padding:12px;border-radius:16px}
+  .checkout-stripe-inline-head{margin-bottom:10px}
+  .stripe-payment-element{min-height:100px}
+}
