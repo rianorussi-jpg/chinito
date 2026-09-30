@@ -137,6 +137,18 @@ const buildOrderPayload=(items=[])=>items.map(item=>{
 
 const CART_STORAGE_KEY='chinito_cart_v1'
 const STRIPE_PENDING_ORDER_KEY='chinito_pending_stripe_order_v1'
+const ASAP_PICKUP_LABEL='Lo antes posible · 20–30 min'
+const PICKUP_OPEN_MINUTES=13*60
+const PICKUP_CLOSE_MINUTES=20*60
+const formatPickupMinutes=(minutes)=>`${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`
+const getAvailablePickupSlots=(now=new Date())=>{
+  const currentMinutes=now.getHours()*60+now.getMinutes()
+  const slots=[]
+  for(let minutes=PICKUP_OPEN_MINUTES;minutes<=PICKUP_CLOSE_MINUTES;minutes+=30){
+    if(minutes>currentMinutes)slots.push(formatPickupMinutes(minutes))
+  }
+  return slots
+}
 const formatPersonName=(value='')=>String(value||'')
   .trim()
   .replace(/\s+/g,' ')
@@ -181,8 +193,8 @@ function App(){
   const [cartItems,setCartItems]=useState(loadStoredCart)
   const [name,setName]=useState('')
   const [phone,setPhone]=useState('')
-  const [pickup,setPickup]=useState('Lo antes posible · 20–30 min')
-  const [payment,setPayment]=useState('online')
+  const [pickup,setPickup]=useState(ASAP_PICKUP_LABEL)
+  const [payment,setPayment]=useState('pickup')
   const [placed,setPlaced]=useState(false)
   const [lastOrder,setLastOrder]=useState(null)
   const [activeOrder,setActiveOrder]=useState(null)
@@ -1041,6 +1053,15 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
   const finalTotal=Math.max(0,total-cashbackDiscount)
   const itemCount=items.reduce((sum,item)=>sum+Number(item.quantity||0),0)
   const displayName=formatPersonName(name)
+  const [pickupClock,setPickupClock]=useState(()=>Date.now())
+  useEffect(()=>{
+    const timer=window.setInterval(()=>setPickupClock(Date.now()),30000)
+    return ()=>window.clearInterval(timer)
+  },[])
+  const pickupSlots=useMemo(()=>getAvailablePickupSlots(new Date(pickupClock)),[pickupClock])
+  useEffect(()=>{
+    if(pickup!==ASAP_PICKUP_LABEL&&!pickupSlots.includes(pickup))setPickup(ASAP_PICKUP_LABEL)
+  },[pickup,pickupSlots,setPickup])
 
   return <main className="page cart-page checkout-page checkout-v2">
     <header className="checkout-topline checkout-v2-top">
@@ -1080,15 +1101,16 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
             <div className="checkout-pickup-copy"><strong>Recoger en sucursal</strong><span>Sin costo de servicio</span></div>
             <span className="checkout-selected-dot"><Check size={12}/></span>
           </div>
-          <label className="checkout-select-field">
-            <span><Clock3 size={15}/> Hora de pickup</span>
-            <select value={pickup} onChange={e=>setPickup(e.target.value)}>
-              <option>Lo antes posible · 20–30 min</option>
-              <option>Hoy, 7:00 p.m.</option>
-              <option>Hoy, 7:30 p.m.</option>
-              <option>Hoy, 8:00 p.m.</option>
-            </select>
-          </label>
+          <div className="checkout-pickup-time">
+            <span className="checkout-pickup-time-label"><Clock3 size={15}/> Hora de pickup</span>
+            <div className="checkout-pickup-slots">
+              <button type="button" className={pickup===ASAP_PICKUP_LABEL?'selected':''} onClick={()=>setPickup(ASAP_PICKUP_LABEL)}>
+                <b>Lo antes posible</b><small>20–30 min</small>
+              </button>
+              {pickupSlots.map(slot=><button type="button" key={slot} className={pickup===slot?'selected':''} onClick={()=>setPickup(slot)}><b>{slot}</b></button>)}
+            </div>
+            {!pickupSlots.length&&<small className="checkout-no-more-slots">Ya no hay horarios programados disponibles para hoy.</small>}
+          </div>
         </section>
 
         <section className="checkout-section">

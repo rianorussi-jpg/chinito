@@ -4,6 +4,23 @@ import { supabase, supabaseConfigured } from './supabase'
 
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const activeStatuses=['Nuevo','Preparando','Listo']
+const isScheduledPickup=(label='')=>/^\d{2}:\d{2}$/.test(String(label||'').trim())
+const scheduledPickupAt=(order)=>{
+  if(!isScheduledPickup(order?.pickup_label))return null
+  const [hours,minutes]=String(order.pickup_label).split(':').map(Number)
+  const scheduled=new Date(order.created_at)
+  scheduled.setHours(hours,minutes,0,0)
+  return scheduled
+}
+const minutesUntilPickup=(order,now=Date.now())=>{
+  const scheduled=scheduledPickupAt(order)
+  return scheduled?Math.ceil((scheduled.getTime()-now)/60000):null
+}
+const isWaitingScheduledOrder=(order,now=Date.now())=>{
+  if(order?.status==='Listo'||!isScheduledPickup(order?.pickup_label))return false
+  const scheduled=scheduledPickupAt(order)
+  return Boolean(scheduled&&scheduled.getTime()-now>15*60*1000)
+}
 
 export default function App(){
  const [orders,setOrders]=useState([])
@@ -13,6 +30,8 @@ export default function App(){
  const [authError,setAuthError]=useState('')
  const [loading,setLoading]=useState(false)
  const [newOrderOpen,setNewOrderOpen]=useState(false)
+ const [scheduledOpen,setScheduledOpen]=useState(false)
+ const [clock,setClock]=useState(()=>Date.now())
 
  const validateSession=useCallback(async(nextSession)=>{
    if(!nextSession || !supabase){setSession(null);setAuthReady(true);return}
@@ -51,6 +70,11 @@ export default function App(){
 
  useEffect(()=>{loadOrders();loadMenu()},[loadOrders,loadMenu])
  useEffect(()=>{
+   const timer=window.setInterval(()=>setClock(Date.now()),30000)
+   return ()=>window.clearInterval(timer)
+ },[])
+
+ useEffect(()=>{
    if(!supabase || !session)return
    const channel=supabase.channel('kitchen-live')
      .on('postgres_changes',{event:'*',schema:'public',table:'orders'},loadOrders)
@@ -60,7 +84,9 @@ export default function App(){
    return ()=>{supabase.removeChannel(channel)}
  },[session,loadOrders,loadMenu])
 
- const preparing=useMemo(()=>orders.filter(o=>o.status==='Nuevo'||o.status==='Preparando'),[orders])
+ const scheduled=useMemo(()=>orders.filter(o=>isWaitingScheduledOrder(o,clock)).sort((a,b)=>scheduledPickupAt(a)-scheduledPickupAt(b)),[orders,clock])
+ const scheduledIds=useMemo(()=>new Set(scheduled.map(o=>o.id)),[scheduled])
+ const preparing=useMemo(()=>orders.filter(o=>(o.status==='Nuevo'||o.status==='Preparando')&&!scheduledIds.has(o.id)),[orders,scheduledIds])
  const ready=useMemo(()=>orders.filter(o=>o.status==='Listo'),[orders])
 
  const advance=async(order)=>{
@@ -79,7 +105,7 @@ export default function App(){
  return <div className="kitchen">
   <header><div className="brand"><img src="/logo.jpg" alt="Chi-nito"/><div><span>KITCHEN MODE</span><b>CHI-NITO</b></div></div><div className="header-right"><div className="online"><i/> {loading?'Actualizando…':'Cocina conectada'}</div><button onClick={loadOrders} aria-label="Actualizar"><RotateCcw size={17}/></button><button onClick={()=>supabase.auth.signOut()} aria-label="Cerrar sesión"><LogOut size={17}/></button></div></header>
   <main>
-    <section className="k-head"><div><span className="eyebrow">PEDIDOS EN TIEMPO REAL</span><h1>Kitchen Mode</h1><p>Prepara, libera y entrega pedidos desde una sola vista.</p></div><div className="k-head-actions"><div className="counters"><Counter label="Preparando" n={preparing.length}/><Counter label="Listos" n={ready.length}/></div><button className="new-order-button" onClick={()=>setNewOrderOpen(true)}><Plus size={19}/> Nuevo pedido</button></div></section>
+    <section className="k-head"><div><span className="eyebrow">PEDIDOS EN TIEMPO REAL</span><h1>Kitchen Mode</h1><p>Prepara, libera y entrega pedidos desde una sola vista.</p></div><div className="k-head-actions"><div className="counters"><Counter label="Preparando" n={preparing.length}/><Counter label="Listos" n={ready.length}/></div><button className="scheduled-orders-button" onClick={()=>setScheduledOpen(true)}><Clock3 size={18}/> Pedidos programados <b>{scheduled.length}</b></button><button className="new-order-button" onClick={()=>setNewOrderOpen(true)}><Plus size={19}/> Nuevo pedido</button></div></section>
 
     <section className="k-board">
       <OrderLane title="Preparando" subtitle="Todos los pedidos activos en preparación" count={preparing.length} tone="prep">
@@ -90,6 +116,7 @@ export default function App(){
       </OrderLane>
     </section>
   </main>
+  {scheduledOpen&&<ScheduledOrdersModal orders={scheduled} now={clock} onClose={()=>setScheduledOpen(false)}/>}
   {newOrderOpen&&<NewOrderModal menu={menu} onClose={()=>setNewOrderOpen(false)} onCreated={()=>{setNewOrderOpen(false);loadOrders()}}/>}
  </div>
 }
@@ -111,6 +138,23 @@ function Ticket({order,advance}){
    <div className="items">{(order.order_items||[]).map(i=><KitchenItem item={i} key={i.id}/>)}</div>
    <div className="ticket-actions"><button className="print" onClick={()=>window.print()}><Printer size={18}/> Imprimir</button><button className="advance" onClick={advance}>{order.status==='Listo'?<Check size={18}/>:<Flame size={18}/>} {next}</button></div>
  </article>
+}
+
+function ScheduledOrdersModal({orders,now,onClose}){
+ return <div className="scheduled-orders-overlay" onMouseDown={onClose}>
+   <section className="scheduled-orders-modal" onMouseDown={e=>e.stopPropagation()}>
+     <header><div><span>PEDIDOS PROGRAMADOS</span><h2>Próximos pickups</h2><p>Se moverán automáticamente a Preparando 15 minutos antes de la hora elegida.</p></div><button onClick={onClose} aria-label="Cerrar"><X size={21}/></button></header>
+     <div className="scheduled-orders-list">
+       {orders.length===0?<div className="scheduled-orders-empty"><Clock3 size={34}/><h3>No hay pedidos programados</h3><p>Los pedidos con horario futuro aparecerán aquí hasta 15 minutos antes de su pickup.</p></div>:orders.map(order=>{
+         const minutes=minutesUntilPickup(order,now)
+         return <article className="scheduled-order-card" key={order.id}>
+           <div className="scheduled-order-time"><Clock3 size={18}/><strong>{order.pickup_label}</strong><span>{minutes>60?`en ${Math.floor(minutes/60)} h ${minutes%60} min`:`en ${Math.max(0,minutes)} min`}</span></div>
+           <div className="scheduled-order-main"><div className="scheduled-order-title"><span>{order.order_number}</span><b>{order.customer_name}</b></div><p>{(order.order_items||[]).map(i=>`${i.quantity>1?`${i.quantity}× `:''}${i.name}`).join(' · ')}</p><small>{order.customer_phone||'Sin teléfono'} · ${Number(order.total||0).toFixed(2)}</small></div>
+         </article>
+       })}
+     </div>
+   </section>
+ </div>
 }
 
 function KitchenItem({item}){
