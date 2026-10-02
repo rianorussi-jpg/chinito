@@ -2561,16 +2561,27 @@
   .stripe-payment-element{min-height:100px}
 }
 
-/* Pickup por horarios: selección directa en bloques de 30 minutos */
+/* Pickup: primero elige lo antes posible o recoger más tarde */
 .checkout-pickup-time{margin-top:14px}
 .checkout-pickup-time-label{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:850;color:#625a55;margin:0 0 8px 2px}
+.checkout-pickup-mode{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.checkout-pickup-mode>button{min-height:64px;border:1.5px solid #e7ddd5;background:#fbf7f3;color:#171313;border-radius:15px;padding:11px 12px;display:grid;grid-template-columns:18px minmax(0,1fr);align-items:center;gap:9px;text-align:left;cursor:pointer;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease,transform .16s ease}
+.checkout-pickup-mode>button:hover{transform:translateY(-1px);border-color:#cfc2b8}
+.checkout-pickup-mode>button.selected{border-color:var(--red);background:#fff4f4;box-shadow:0 0 0 3px rgba(239,22,31,.06)}
+.checkout-pickup-mode>button>span:last-child{display:grid;gap:3px}
+.checkout-pickup-mode b{font-size:12px;line-height:1.15}
+.checkout-pickup-mode small{font-size:9.5px;line-height:1.25;color:#857a73}
+.checkout-pickup-mode>button.selected small{color:#a54a4e}
+.checkout-pickup-mode .checkout-option-radio{width:17px;height:17px;border:1.5px solid #cdbfb5;border-radius:50%;display:grid;place-items:center;background:#fff}
+.checkout-pickup-mode>button.selected .checkout-option-radio{border-color:var(--red)}
+.checkout-pickup-mode>button.selected .checkout-option-radio i{width:9px;height:9px;border-radius:50%;background:var(--red)}
+.checkout-pickup-later{margin-top:12px;padding-top:12px;border-top:1px solid #eee5de}
+.checkout-pickup-later>span{display:block;font-size:10px;font-weight:800;color:#756b65;margin:0 0 8px 2px}
 .checkout-pickup-slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-.checkout-pickup-slots button{min-height:48px;border:1.5px solid #e7ddd5;background:#fbf7f3;color:#171313;border-radius:13px;padding:8px 7px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease,transform .16s ease}
+.checkout-pickup-slots button{min-height:44px;border:1.5px solid #e7ddd5;background:#fbf7f3;color:#171313;border-radius:12px;padding:8px 7px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .16s ease,background .16s ease,box-shadow .16s ease,transform .16s ease}
 .checkout-pickup-slots button:hover{transform:translateY(-1px);border-color:#cfc2b8}
 .checkout-pickup-slots button.selected{border-color:var(--red);background:#fff4f4;box-shadow:0 0 0 3px rgba(239,22,31,.06);color:var(--red)}
 .checkout-pickup-slots button b{font-size:12px;line-height:1.1}
-.checkout-pickup-slots button small{font-size:8.5px;color:#857a73;line-height:1.1}
-.checkout-pickup-slots button.selected small{color:#b64046}
-.checkout-no-more-slots{display:block;margin-top:8px;font-size:10px;color:#857a73;line-height:1.4}
-@media(max-width:620px){.checkout-pickup-slots{grid-template-columns:repeat(3,minmax(0,1fr))}.checkout-pickup-slots button:first-child{grid-column:span 2}}
-@media(max-width:390px){.checkout-pickup-slots{grid-template-columns:repeat(2,minmax(0,1fr))}.checkout-pickup-slots button:first-child{grid-column:1/-1}}
+.checkout-no-more-slots{display:block;margin-top:10px;padding:10px 11px;border-radius:11px;background:#f8f1eb;font-size:10px;color:#857a73;line-height:1.4}
+@media(max-width:620px){.checkout-pickup-mode{grid-template-columns:1fr}.checkout-pickup-slots{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:390px){.checkout-pickup-slots{grid-template-columns:repeat(2,minmax(0,1fr))}}

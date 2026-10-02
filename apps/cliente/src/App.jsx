@@ -137,10 +137,11 @@ const buildOrderPayload=(items=[])=>items.map(item=>{
 
 const CART_STORAGE_KEY='chinito_cart_v1'
 const STRIPE_PENDING_ORDER_KEY='chinito_pending_stripe_order_v1'
-const ASAP_PICKUP_LABEL='Lo antes posible · 20–30 min'
+const ASAP_PICKUP_LABEL='Lo antes posible · 10–15 min'
 const PICKUP_OPEN_MINUTES=13*60
 const PICKUP_CLOSE_MINUTES=20*60
 const formatPickupMinutes=(minutes)=>`${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`
+const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
 const getAvailablePickupSlots=(now=new Date())=>{
   const currentMinutes=now.getHours()*60+now.getMinutes()
   const slots=[]
@@ -1053,6 +1054,7 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
   const finalTotal=Math.max(0,total-cashbackDiscount)
   const itemCount=items.reduce((sum,item)=>sum+Number(item.quantity||0),0)
   const displayName=formatPersonName(name)
+  const [pickupMode,setPickupMode]=useState(()=>pickup===ASAP_PICKUP_LABEL?'asap':'later')
   const [pickupClock,setPickupClock]=useState(()=>Date.now())
   useEffect(()=>{
     const timer=window.setInterval(()=>setPickupClock(Date.now()),30000)
@@ -1060,8 +1062,15 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
   },[])
   const pickupSlots=useMemo(()=>getAvailablePickupSlots(new Date(pickupClock)),[pickupClock])
   useEffect(()=>{
-    if(pickup!==ASAP_PICKUP_LABEL&&!pickupSlots.includes(pickup))setPickup(ASAP_PICKUP_LABEL)
+    if(pickup!==ASAP_PICKUP_LABEL&&!pickupSlots.includes(pickup)){
+      setPickup(ASAP_PICKUP_LABEL)
+      setPickupMode('asap')
+    }
   },[pickup,pickupSlots,setPickup])
+  useEffect(()=>{
+    if(pickup===ASAP_PICKUP_LABEL)setPickupMode('asap')
+    else if(pickupSlots.includes(pickup))setPickupMode('later')
+  },[pickup,pickupSlots])
 
   return <main className="page cart-page checkout-page checkout-v2">
     <header className="checkout-topline checkout-v2-top">
@@ -1103,13 +1112,25 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
           </div>
           <div className="checkout-pickup-time">
             <span className="checkout-pickup-time-label"><Clock3 size={15}/> Hora de pickup</span>
-            <div className="checkout-pickup-slots">
-              <button type="button" className={pickup===ASAP_PICKUP_LABEL?'selected':''} onClick={()=>setPickup(ASAP_PICKUP_LABEL)}>
-                <b>Lo antes posible</b><small>20–30 min</small>
+            <div className="checkout-pickup-mode">
+              <button type="button" className={pickupMode==='asap'?'selected':''} onClick={()=>{setPickupMode('asap');setPickup(ASAP_PICKUP_LABEL)}}>
+                <span className="checkout-option-radio"><i /></span>
+                <span><b>Lo antes posible</b><small>Listo en 10–15 min</small></span>
               </button>
-              {pickupSlots.map(slot=><button type="button" key={slot} className={pickup===slot?'selected':''} onClick={()=>setPickup(slot)}><b>{slot}</b></button>)}
+              <button type="button" className={pickupMode==='later'?'selected':''} onClick={()=>{setPickupMode('later');if(pickup===ASAP_PICKUP_LABEL&&pickupSlots.length)setPickup(pickupSlots[0])}}>
+                <span className="checkout-option-radio"><i /></span>
+                <span><b>Recoger más tarde</b><small>Elige una hora para hoy</small></span>
+              </button>
             </div>
-            {!pickupSlots.length&&<small className="checkout-no-more-slots">Ya no hay horarios programados disponibles para hoy.</small>}
+            {pickupMode==='later'&&<>
+              {pickupSlots.length>0&&<div className="checkout-pickup-later">
+                <span>Selecciona la hora</span>
+                <div className="checkout-pickup-slots">
+                  {pickupSlots.map(slot=><button type="button" key={slot} className={pickup===slot?'selected':''} onClick={()=>setPickup(slot)}><b>{slot}</b></button>)}
+                </div>
+              </div>}
+              {!pickupSlots.length&&<small className="checkout-no-more-slots">Ya no hay horarios programados disponibles para hoy.</small>}
+            </>}
           </div>
         </section>
 
@@ -1238,7 +1259,7 @@ function OrderTracker({order,loading,onBack}){
   return <main className="tracking-page">
     <button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button>
     <section className={`tracking-hero ${order.status==='Listo'?'ready':''}`}><div className="tracking-live"><i/> PEDIDO EN VIVO</div><div className="tracking-hero-main"><div><span>{order.order_number}</span><h1>{state.label}</h1><p>{state.eta}</p></div><Clock3 size={42}/></div><OrderStatusSteps status={order.status}/></section>
-    <div className="tracking-grid"><section className="tracking-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Tu pedido</h2><p>Lo que estamos preparando</p></div></div><OrderItemsSummary items={order.order_items||[]}/></section><section className="tracking-card tracking-details"><h2>Detalles</h2><div><span>Recoge a nombre de</span><b>{formatPersonName(order.customer_name||'')}</b></div><div><span>Pickup</span><b>{order.pickup_label||'Lo antes posible'}</b></div><div><span>Pago</span><b>{order.payment_method==='online'?'Pago en línea':'Pago al recoger'}</b></div><div><span>Total</span><strong>${Number(order.total||0).toFixed(2)}</strong></div></section></div>
+    <div className="tracking-grid"><section className="tracking-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Tu pedido</h2><p>Lo que estamos preparando</p></div></div><OrderItemsSummary items={order.order_items||[]}/></section><section className="tracking-card tracking-details"><h2>Detalles</h2><div><span>Recoge a nombre de</span><b>{formatPersonName(order.customer_name||'')}</b></div><div><span>Pickup</span><b>{displayPickupLabel(order.pickup_label||ASAP_PICKUP_LABEL)}</b></div><div><span>Pago</span><b>{order.payment_method==='online'?'Pago en línea':'Pago al recoger'}</b></div><div><span>Total</span><strong>${Number(order.total||0).toFixed(2)}</strong></div></section></div>
   </main>
 }
 
@@ -1246,7 +1267,7 @@ function Success({order,onReset}){
   const state=customerOrderState(order?.status)
   return <main className="confirmed-page">
     <section className={`confirmed-hero ${order?.status==='Listo'?'ready':''}`}><div className="confirmed-check"><Check size={30}/></div><span className="confirmed-kicker">PEDIDO CONFIRMADO</span><h1>{state.label}</h1><p>{state.eta}</p><div className="confirmed-order-number"><span>Número de pedido</span><strong>{order?.order_number||'Confirmado'}</strong></div><OrderStatusSteps status={order?.status}/></section>
-    <section className="confirmed-info-strip"><div><small>Pickup</small><b>{order?.pickup_label||'Lo antes posible'}</b></div><div><small>Cliente</small><b>{formatPersonName(order?.customer_name||'')}</b></div><div><small>Total</small><strong>${Number(order?.total||0).toFixed(2)}</strong></div></section>
+    <section className="confirmed-info-strip"><div><small>Pickup</small><b>{displayPickupLabel(order?.pickup_label||ASAP_PICKUP_LABEL)}</b></div><div><small>Cliente</small><b>{formatPersonName(order?.customer_name||'')}</b></div><div><small>Total</small><strong>${Number(order?.total||0).toFixed(2)}</strong></div></section>
     <section className="confirmed-order-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Resumen del pedido</h2><p>Cocina ya recibió estos productos</p></div></div><OrderItemsSummary items={order?.order_items||[]}/></section>
     <div className="confirmed-note"><Clock3 size={18}/><div><b>{order?.status==='Listo'?'Tu pedido ya está listo para recoger':'Tiempo estimado: 10–15 minutos'}</b><span>{order?.status==='Listo'?'Puedes pasar por tu pedido. Muéstranos tu número de orden al llegar.':'El estado se actualiza automáticamente. Cuando esté listo verás “Listo para recoger”.'}</span></div></div>
     <button className="primary confirmed-home-button" onClick={onReset}>Volver al inicio</button>

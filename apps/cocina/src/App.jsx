@@ -5,6 +5,7 @@ import { supabase, supabaseConfigured } from './supabase'
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const activeStatuses=['Nuevo','Preparando','Listo']
 const isScheduledPickup=(label='')=>/^\d{2}:\d{2}$/.test(String(label||'').trim())
+const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
 const scheduledPickupAt=(order)=>{
   if(!isScheduledPickup(order?.pickup_label))return null
   const [hours,minutes]=String(order.pickup_label).split(':').map(Number)
@@ -134,7 +135,7 @@ function Ticket({order,advance}){
  const elapsed=Math.max(0,Math.floor((Date.now()-new Date(order.created_at).getTime())/60000))
  return <article className={`ticket ${order.status.toLowerCase()}`}>
    <div className="ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div><em>{order.status==='Listo'?'Listo':'Preparando'}</em></div>
-   <div className="pickup"><ShoppingBag size={18}/><div><b>{order.pickup_label}</b><span>Hace {elapsed} min · {order.customer_phone}</span></div><Clock3 size={18}/></div>
+   <div className="pickup"><ShoppingBag size={18}/><div><b>{displayPickupLabel(order.pickup_label)}</b><span>Hace {elapsed} min · {order.customer_phone}</span></div><Clock3 size={18}/></div>
    <div className="items">{(order.order_items||[]).map(i=><KitchenItem item={i} key={i.id}/>)}</div>
    <div className="ticket-actions"><button className="print" onClick={()=>window.print()}><Printer size={18}/> Imprimir</button><button className="advance" onClick={advance}>{order.status==='Listo'?<Check size={18}/>:<Flame size={18}/>} {next}</button></div>
  </article>
@@ -177,7 +178,7 @@ function NewOrderModal({menu,onClose,onCreated}){
  const takeaway=useMemo(()=>guisados.filter(x=>x.metadata?.sell_by_volume!==false&&(Number(x.metadata?.half_price)>0||Number(x.metadata?.liter_price)>0)),[guisados])
  const [customerName,setCustomerName]=useState('')
  const [customerPhone,setCustomerPhone]=useState('')
- const [pickup,setPickup]=useState('Lo antes posible · 20–30 min')
+ const [pickup,setPickup]=useState('Lo antes posible · 10–15 min')
  const [product,setProduct]=useState(null)
  const [base,setBase]=useState(null)
  const [selectedGuisados,setSelectedGuisados]=useState([])
@@ -237,7 +238,7 @@ function NewOrderModal({menu,onClose,onCreated}){
      <header className="manual-order-head"><div><span>NUEVO PEDIDO</span><h2>Captura desde cocina</h2><p>Arma el pedido igual que en la app y envíalo directo a Preparando.</p></div><button onClick={onClose} aria-label="Cerrar"><X size={22}/></button></header>
      <div className="manual-order-body">
        <div className="manual-order-builder">
-         <section className="manual-customer"><label><UserRound size={16}/><span>Nombre del cliente</span><input value={customerName} onChange={e=>setCustomerName(e.target.value)} placeholder="Mostrador"/></label><label><Phone size={16}/><span>Teléfono</span><input value={customerPhone} onChange={e=>setCustomerPhone(e.target.value)} placeholder="Opcional"/></label><label className="wide"><Clock3 size={16}/><span>Pickup</span><select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 20–30 min</option><option>En 15 minutos</option><option>En 30 minutos</option><option>En 45 minutos</option></select></label></section>
+         <section className="manual-customer"><label><UserRound size={16}/><span>Nombre del cliente</span><input value={customerName} onChange={e=>setCustomerName(e.target.value)} placeholder="Mostrador"/></label><label><Phone size={16}/><span>Teléfono</span><input value={customerPhone} onChange={e=>setCustomerPhone(e.target.value)} placeholder="Opcional"/></label><label className="wide"><Clock3 size={16}/><span>Pickup</span><select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 10–15 min</option><option>En 15 minutos</option><option>En 30 minutos</option><option>En 45 minutos</option></select></label></section>
 
          <section className="manual-section"><div className="manual-section-title"><span>1</span><div><h3>Elige un Chi-nito</h3><p>Después selecciona base, guisados y extras.</p></div></div><div className="manual-product-grid">{products.map(p=><button key={p.slug} className={product?.slug===p.slug?'selected':''} onClick={()=>chooseProduct(p)}><img src={p.image||'/logo.jpg'} alt=""/><b>{p.name}</b><span>${money(p.price)}</span></button>)}</div></section>
 
