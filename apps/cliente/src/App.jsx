@@ -142,13 +142,26 @@ const PICKUP_OPEN_MINUTES=13*60
 const PICKUP_CLOSE_MINUTES=20*60
 const formatPickupMinutes=(minutes)=>`${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`
 const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
-const getAvailablePickupSlots=(now=new Date())=>{
+const getStoreScheduleState=(now=new Date())=>{
   const currentMinutes=now.getHours()*60+now.getMinutes()
+  if(currentMinutes>=PICKUP_OPEN_MINUTES&&currentMinutes<PICKUP_CLOSE_MINUTES){
+    return {open:true,period:'open',scheduleDay:'today'}
+  }
+  if(currentMinutes<PICKUP_OPEN_MINUTES){
+    return {open:false,period:'before',scheduleDay:'today'}
+  }
+  return {open:false,period:'after',scheduleDay:'tomorrow'}
+}
+const getPickupSlots=(now=new Date())=>{
+  const schedule=getStoreScheduleState(now)
+  const currentMinutes=now.getHours()*60+now.getMinutes()
+  const prefix=schedule.scheduleDay==='tomorrow'?'Mañana · ':''
   const slots=[]
   for(let minutes=PICKUP_OPEN_MINUTES;minutes<=PICKUP_CLOSE_MINUTES;minutes+=30){
-    if(minutes>currentMinutes)slots.push(formatPickupMinutes(minutes))
+    if(schedule.scheduleDay==='today'&&schedule.open&&minutes<=currentMinutes)continue
+    slots.push({value:`${prefix}${formatPickupMinutes(minutes)}`,label:formatPickupMinutes(minutes)})
   }
-  return slots
+  return {schedule,slots}
 }
 const formatPersonName=(value='')=>String(value||'')
   .trim()
@@ -794,6 +807,12 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
   const {products:PRODUCTOS,complements:COMPLEMENTOS_HOME,takeaway:GUISADOS_PARA_LLEVAR,drinks:BEBIDAS_HOME,flavors:REFRESCO_SABORES}=menuData
   const [takeawaySize,setTakeawaySize]=useState('half')
   const [sodaOpen,setSodaOpen]=useState(false)
+  const [homeClock,setHomeClock]=useState(()=>Date.now())
+  useEffect(()=>{
+    const timer=window.setInterval(()=>setHomeClock(Date.now()),30000)
+    return ()=>window.clearInterval(timer)
+  },[])
+  const storeSchedule=getStoreScheduleState(new Date(homeClock))
   const goToMenu=()=>document.getElementById('menu-chinito')?.scrollIntoView({behavior:'smooth',block:'start'})
   const variant=takeawaySize==='half'?'1/2 litro':'1 litro'
   const available=(slug)=>catalog[slug]?.active !== false
@@ -808,6 +827,10 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
     </section>
 
     <section className="section-wrap" id="menu-chinito">
+      {!storeSchedule.open&&<div className="store-closed-banner" role="status">
+        <div className="store-closed-icon"><Clock3 size={20}/></div>
+        <div><strong>Estamos cerrados</strong><span>Nuestro horario es de 13:00 a 20:00, pero puedes programar tu pedido.</span></div>
+      </div>}
       <div className="section-head"><div><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
       <div className="product-grid">{PRODUCTOS.map((p)=>{const ok=available(p.slug);const pPrice=price(p.slug,p.price);return <article className={`product-card ${ok?'':'soldout-card'}`} key={p.id}>
         <div className="product-visual"><img src={p.image} alt={p.name}/></div>
@@ -1060,17 +1083,26 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
     const timer=window.setInterval(()=>setPickupClock(Date.now()),30000)
     return ()=>window.clearInterval(timer)
   },[])
-  const pickupSlots=useMemo(()=>getAvailablePickupSlots(new Date(pickupClock)),[pickupClock])
+  const pickupSchedule=useMemo(()=>getPickupSlots(new Date(pickupClock)),[pickupClock])
+  const storeIsOpen=pickupSchedule.schedule.open
+  const pickupSlots=pickupSchedule.slots
+  const pickupValues=useMemo(()=>pickupSlots.map(slot=>slot.value),[pickupSlots])
   useEffect(()=>{
-    if(pickup!==ASAP_PICKUP_LABEL&&!pickupSlots.includes(pickup)){
+    if(!storeIsOpen){
+      setPickupMode('later')
+      if(!pickupValues.includes(pickup)&&pickupSlots.length)setPickup(pickupSlots[0].value)
+      return
+    }
+    if(pickup!==ASAP_PICKUP_LABEL&&!pickupValues.includes(pickup)){
       setPickup(ASAP_PICKUP_LABEL)
       setPickupMode('asap')
     }
-  },[pickup,pickupSlots,setPickup])
+  },[storeIsOpen,pickup,pickupValues,pickupSlots,setPickup])
   useEffect(()=>{
+    if(!storeIsOpen){setPickupMode('later');return}
     if(pickup===ASAP_PICKUP_LABEL)setPickupMode('asap')
-    else if(pickupSlots.includes(pickup))setPickupMode('later')
-  },[pickup,pickupSlots])
+    else if(pickupValues.includes(pickup))setPickupMode('later')
+  },[storeIsOpen,pickup,pickupValues])
 
   return <main className="page cart-page checkout-page checkout-v2">
     <header className="checkout-topline checkout-v2-top">
@@ -1112,24 +1144,24 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
           </div>
           <div className="checkout-pickup-time">
             <span className="checkout-pickup-time-label"><Clock3 size={15}/> Hora de pickup</span>
-            <div className="checkout-pickup-mode">
-              <button type="button" className={pickupMode==='asap'?'selected':''} onClick={()=>{setPickupMode('asap');setPickup(ASAP_PICKUP_LABEL)}}>
+            <div className={`checkout-pickup-mode ${!storeIsOpen?'closed-hours':''}`}>
+              {storeIsOpen&&<button type="button" className={pickupMode==='asap'?'selected':''} onClick={()=>{setPickupMode('asap');setPickup(ASAP_PICKUP_LABEL)}}>
                 <span className="checkout-option-radio"><i /></span>
                 <span><b>Lo antes posible</b><small>Listo en 10–15 min</small></span>
-              </button>
-              <button type="button" className={pickupMode==='later'?'selected':''} onClick={()=>{setPickupMode('later');if(pickup===ASAP_PICKUP_LABEL&&pickupSlots.length)setPickup(pickupSlots[0])}}>
+              </button>}
+              <button type="button" className={pickupMode==='later'?'selected':''} onClick={()=>{setPickupMode('later');if((pickup===ASAP_PICKUP_LABEL||!pickupValues.includes(pickup))&&pickupSlots.length)setPickup(pickupSlots[0].value)}}>
                 <span className="checkout-option-radio"><i /></span>
-                <span><b>Recoger más tarde</b><small>Elige una hora para hoy</small></span>
+                <span><b>{storeIsOpen?'Recoger más tarde':pickupSchedule.schedule.scheduleDay==='tomorrow'?'Recoger mañana':'Recoger más tarde'}</b><small>{pickupSchedule.schedule.scheduleDay==='tomorrow'?'Elige una hora para mañana':'Elige una hora para hoy'}</small></span>
               </button>
             </div>
             {pickupMode==='later'&&<>
               {pickupSlots.length>0&&<div className="checkout-pickup-later">
-                <span>Selecciona la hora</span>
+                <span>{pickupSchedule.schedule.scheduleDay==='tomorrow'?'Horarios de mañana':'Selecciona la hora'}</span>
                 <div className="checkout-pickup-slots">
-                  {pickupSlots.map(slot=><button type="button" key={slot} className={pickup===slot?'selected':''} onClick={()=>setPickup(slot)}><b>{slot}</b></button>)}
+                  {pickupSlots.map(slot=><button type="button" key={slot.value} className={pickup===slot.value?'selected':''} onClick={()=>setPickup(slot.value)}><b>{slot.label}</b></button>)}
                 </div>
               </div>}
-              {!pickupSlots.length&&<small className="checkout-no-more-slots">Ya no hay horarios programados disponibles para hoy.</small>}
+              {!pickupSlots.length&&<small className="checkout-no-more-slots">No hay horarios programados disponibles.</small>}
             </>}
           </div>
         </section>

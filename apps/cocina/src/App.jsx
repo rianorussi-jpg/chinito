@@ -4,12 +4,16 @@ import { supabase, supabaseConfigured } from './supabase'
 
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const activeStatuses=['Nuevo','Preparando','Listo']
-const isScheduledPickup=(label='')=>/^\d{2}:\d{2}$/.test(String(label||'').trim())
+const isScheduledPickup=(label='')=>/^(?:Mañana\s*·\s*)?\d{2}:\d{2}$/i.test(String(label||'').trim())
 const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
 const scheduledPickupAt=(order)=>{
   if(!isScheduledPickup(order?.pickup_label))return null
-  const [hours,minutes]=String(order.pickup_label).split(':').map(Number)
+  const raw=String(order.pickup_label||'').trim()
+  const tomorrow=/^Mañana\s*·/i.test(raw)
+  const time=raw.replace(/^Mañana\s*·\s*/i,'')
+  const [hours,minutes]=time.split(':').map(Number)
   const scheduled=new Date(order.created_at)
+  if(tomorrow)scheduled.setDate(scheduled.getDate()+1)
   scheduled.setHours(hours,minutes,0,0)
   return scheduled
 }

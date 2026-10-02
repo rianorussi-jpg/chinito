@@ -2594,3 +2594,35 @@
     font-size:16px!important;
   }
 }
+
+/* Horario de operación 13:00–20:00 */
+.store-closed-banner{
+  margin:0 0 18px;
+  padding:14px 16px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  border:1px solid #ead9ce;
+  border-radius:17px;
+  background:linear-gradient(135deg,#fff7ef 0%,#fff1e7 100%);
+  box-shadow:0 8px 22px rgba(55,35,24,.06);
+}
+.store-closed-icon{
+  width:40px;
+  height:40px;
+  flex:0 0 40px;
+  display:grid;
+  place-items:center;
+  border-radius:13px;
+  background:#171313;
+  color:#fff;
+}
+.store-closed-banner strong,
+.store-closed-banner span{display:block}
+.store-closed-banner strong{font-size:13px;color:#171313;margin-bottom:2px}
+.store-closed-banner span{font-size:11px;line-height:1.4;color:#756a63}
+.checkout-pickup-mode.closed-hours{grid-template-columns:1fr}
+@media(max-width:520px){
+  .store-closed-banner{padding:12px 13px;margin-bottom:15px}
+  .store-closed-icon{width:36px;height:36px;flex-basis:36px;border-radius:11px}
+}
