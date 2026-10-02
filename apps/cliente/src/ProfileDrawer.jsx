@@ -54,7 +54,7 @@ function PhoneField({country,onCountry,number,onNumber,idPrefix}){
   </div>
 }
 
-export default function ProfileDrawer({session,intent,name,phone,cashbackBalance=0,cashbackLoading=false,onSave,onClose,onAuthenticated}){
+export default function ProfileDrawer({session,intent,name,phone,cashbackBalance=0,cashbackLoading=false,onSave,onClose,onAuthenticated,onRecoveryComplete}){
   const [view,setView]=useState('login')
   const [editingProfile,setEditingProfile]=useState(false)
   const [email,setEmail]=useState('')
@@ -63,6 +63,8 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
   const [registerEmail,setRegisterEmail]=useState('')
   const [registerPassword,setRegisterPassword]=useState('')
   const [confirmPassword,setConfirmPassword]=useState('')
+  const [newPassword,setNewPassword]=useState('')
+  const [confirmNewPassword,setConfirmNewPassword]=useState('')
   const [phoneCountry,setPhoneCountry]=useState('MX')
   const [phoneNumber,setPhoneNumber]=useState('')
   const [profileName,setProfileName]=useState(name||'')
@@ -93,9 +95,8 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
     const loadOrders=async()=>{
       setOrdersLoading(true);setOrdersError('')
       const {data,error:historyError}=await supabase.from('orders')
-        .select('id,order_number,total,status,payment_method,payment_status,created_at,pickup_label,order_items(id,name,quantity,variant)')
+        .select('id,order_number,total,status,created_at,pickup_label,order_items(id,name,quantity,variant)')
         .eq('customer_id',userId)
-        .or('payment_method.eq.pickup,payment_status.eq.paid,status.eq.Cancelado')
         .order('created_at',{ascending:false})
         .limit(50)
       if(!alive)return
@@ -113,6 +114,37 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
   const clearMessages=()=>{setError('');setNotice('')}
   const showRegister=()=>{clearMessages();setAcceptedLegal(false);setRegisterEmail(email);setView('register')}
   const showLogin=()=>{clearMessages();setView('login')}
+  const showForgot=()=>{clearMessages();setView('forgot')}
+
+  const requestPasswordReset=async(e)=>{
+    e.preventDefault();clearMessages()
+    if(!supabaseConfigured||!supabase){setError('Falta conectar Supabase en este proyecto de Vercel.');return}
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())){setError('Escribe el correo de tu cuenta.');return}
+    setBusy(true)
+    try{
+      const {error:resetError}=await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(),{
+        redirectTo:`${window.location.origin}${window.location.pathname}`,
+      })
+      if(resetError)throw resetError
+      setNotice('Te enviamos un enlace para cambiar tu contraseña. Revisa tu correo y abre el enlace desde este dispositivo.')
+    }catch(err){setError(err.message||'No pudimos enviar el correo de recuperación. Intenta de nuevo.')}
+    finally{setBusy(false)}
+  }
+
+  const changeRecoveredPassword=async(e)=>{
+    e.preventDefault();clearMessages()
+    if(newPassword.length<8){setError('La nueva contraseña debe tener al menos 8 caracteres.');return}
+    if(newPassword!==confirmNewPassword){setError('Las contraseñas no coinciden.');return}
+    setBusy(true)
+    try{
+      const {error:updateError}=await supabase.auth.updateUser({password:newPassword})
+      if(updateError)throw updateError
+      setNewPassword('');setConfirmNewPassword('')
+      setNotice('Tu contraseña se actualizó correctamente.')
+      onRecoveryComplete?.()
+    }catch(err){setError(err.message||'No pudimos actualizar tu contraseña. Solicita un nuevo enlace e intenta otra vez.')}
+    finally{setBusy(false)}
+  }
 
   const login=async(e)=>{
     e.preventDefault();clearMessages()
@@ -212,7 +244,7 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
   return <div className="profile-drawer-overlay" onClick={onClose} role="presentation">
     <aside className="profile-drawer auth-drawer" onClick={e=>e.stopPropagation()} aria-label="Cuenta y perfil" role="dialog" aria-modal="true">
       <div className="profile-drawer-head">
-        <div><small>{intent==='checkout'?'ANTES DE CONTINUAR':'MI CUENTA'}</small><h2>{signedIn?(showOrders?'Mis pedidos':'Tu perfil'):view==='register'?'Crear cuenta':'Bienvenido'}</h2></div>
+        <div><small>{intent==='checkout'?'ANTES DE CONTINUAR':intent==='recovery'?'SEGURIDAD':'MI CUENTA'}</small><h2>{intent==='recovery'?'Nueva contraseña':signedIn?(showOrders?'Mis pedidos':'Tu perfil'):view==='register'?'Crear cuenta':view==='forgot'?'Recuperar contraseña':'Bienvenido'}</h2></div>
         <button className="profile-drawer-close" type="button" onClick={onClose} aria-label="Cerrar"><X size={22}/></button>
       </div>
       {intent==='checkout'&&!signedIn&&<p className="auth-checkout-note">Para continuar a Checkout, inicia sesión o crea tu cuenta. Tu carrito se conservará.</p>}
@@ -220,7 +252,17 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
       {notice&&<div className="auth-message auth-notice" role="status">{notice}</div>}
       {!supabaseConfigured&&<div className="auth-message auth-error">Falta configurar las variables de Supabase en Vercel.</div>}
 
-      {signedIn ? <>
+      {intent==='recovery' ? <>
+        <div className="profile-drawer-intro password-recovery-intro">
+          <div className="profile-drawer-avatar"><UserRound size={30}/></div>
+          <p>Escribe una nueva contraseña para tu cuenta de Chi-nito.</p>
+        </div>
+        <form className="profile-drawer-fields" onSubmit={changeRecoveredPassword}>
+          <label>Nueva contraseña<input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" minLength={8} required /></label>
+          <label>Confirmar contraseña<input type="password" value={confirmNewPassword} onChange={e=>setConfirmNewPassword(e.target.value)} placeholder="Repite tu nueva contraseña" autoComplete="new-password" minLength={8} required /></label>
+          <button className="primary profile-drawer-save" type="submit" disabled={busy||!supabaseConfigured}>{busy?'Actualizando…':'Guardar nueva contraseña'}</button>
+        </form>
+      </> : signedIn ? <>
         {showOrders ? <>
           <button className="auth-back" onClick={()=>setShowOrders(false)} type="button"><ArrowLeft size={15}/> Volver a mi perfil</button>
           <div className="profile-orders-head"><div><History size={18}/><div><b>Historial de pedidos</b><span>Últimos 50 pedidos de tu cuenta</span></div></div></div>
@@ -278,9 +320,19 @@ export default function ProfileDrawer({session,intent,name,phone,cashbackBalance
         <form className="profile-drawer-fields" onSubmit={login}>
           <label>Correo electrónico<input type="email" inputMode="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com" autoComplete="username" required /></label>
           <label>Contraseña<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Tu contraseña" autoComplete="current-password" required /></label>
+          <button className="auth-forgot-link" type="button" onClick={showForgot}>¿Olvidaste tu contraseña?</button>
           <button className="primary profile-drawer-save" type="submit" disabled={busy||!supabaseConfigured}>{busy?'Ingresando…':'Iniciar sesión'}</button>
         </form>
         <button className="profile-drawer-link" type="button" onClick={showRegister}>¿No tienes cuenta? Regístrate</button>
+      </> : view==='forgot' ? <>
+        <button className="auth-back" onClick={showLogin} type="button"><ArrowLeft size={15}/> Volver a iniciar sesión</button>
+        <div className="profile-drawer-intro forgot-password-intro">
+          <p>Te enviaremos un enlace seguro para crear una nueva contraseña.</p>
+        </div>
+        <form className="profile-drawer-fields" onSubmit={requestPasswordReset}>
+          <label>Correo electrónico<input type="email" inputMode="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="tu@correo.com" autoComplete="email" required /></label>
+          <button className="primary profile-drawer-save" type="submit" disabled={busy||!supabaseConfigured}>{busy?'Enviando…':'Enviar enlace de recuperación'}</button>
+        </form>
       </> : <>
         <button className="auth-back" onClick={showLogin} type="button"><ArrowLeft size={15}/> Ya tengo cuenta</button>
         <form className="profile-drawer-fields" onSubmit={register}>

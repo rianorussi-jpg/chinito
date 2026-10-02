@@ -2626,3 +2626,71 @@
   .store-closed-banner{padding:12px 13px;margin-bottom:15px}
   .store-closed-icon{width:36px;height:36px;flex-basis:36px;border-radius:11px}
 }
+
+/* Contacto, ayuda en tracker y recuperación de contraseña */
+.app-footer-phone{
+  width:max-content;
+  color:#fff;
+  font-size:15px;
+  font-weight:850;
+  text-decoration:none;
+  letter-spacing:.01em;
+}
+.app-footer-phone:hover{text-decoration:underline}
+.tracking-help{
+  margin-top:14px;
+  padding:16px 18px;
+  border:1px solid rgba(43,27,18,.07);
+  border-radius:20px;
+  background:#fff;
+  box-shadow:0 12px 30px rgba(43,27,18,.06);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+}
+.tracking-help span,
+.tracking-help b{display:block}
+.tracking-help span{font-size:10px;color:#7d716a;margin-bottom:2px}
+.tracking-help b{font-size:13px;color:#171313}
+.tracking-help a{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  min-height:40px;
+  padding:10px 14px;
+  border-radius:12px;
+  background:#171313;
+  color:#fff;
+  text-decoration:none;
+  font-size:11px;
+  font-weight:850;
+  white-space:nowrap;
+}
+.auth-forgot-link{
+  width:max-content;
+  justify-self:end;
+  margin:2px 0 0 auto;
+  padding:2px 0;
+  border:0;
+  background:transparent;
+  color:#5d514b;
+  font-size:10px;
+  font-weight:800;
+  cursor:pointer;
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+.auth-forgot-link:hover{color:var(--red)}
+.forgot-password-intro,
+.password-recovery-intro{
+  padding-top:8px;
+  padding-bottom:8px;
+}
+.forgot-password-intro{display:block}
+.forgot-password-intro p{font-size:11px;line-height:1.55}
+@media(max-width:520px){
+  .tracking-help{align-items:stretch;flex-direction:column}
+  .tracking-help a{width:100%}
+}

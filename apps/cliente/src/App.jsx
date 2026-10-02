@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, Minus, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Clock3, CreditCard, MessageCircle, Minus, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 import ProfileDrawer from './ProfileDrawer'
 import StripePaymentFields from './StripePaymentFields'
@@ -253,6 +253,10 @@ function App(){
       if(!mounted) return
       setSession(current)
       if(_event==='SIGNED_OUT'){setName('');setPhone('')}
+      if(_event==='PASSWORD_RECOVERY'){
+        setAuthIntent('recovery')
+        setProfileOpen(true)
+      }
       setAuthReady(true)
     })
     supabase.auth.getSession().then(({data,error})=>{
@@ -799,6 +803,7 @@ function App(){
       onSave={saveCustomerProfile}
       onClose={()=>{setProfileOpen(false);setAuthIntent('profile')}}
       onAuthenticated={()=>{setProfileOpen(false);if(authIntent==='checkout'){setAuthIntent('profile');setScreen('cart');window.scrollTo(0,0)}}}
+      onRecoveryComplete={()=>{setAuthIntent('profile')}}
     />}
   </div>
 }
@@ -932,6 +937,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
         <div className="app-footer-pickup">
           <strong>Solo pickup</strong>
           <span>Haz tu pedido en línea y recógelo en sucursal.</span>
+          <a className="app-footer-phone" href="tel:+524412496395">441 249 6395</a>
         </div>
       </div>
       <div className="app-footer-bottom"><span>© 2026 Chi-nito. Todos los derechos reservados.</span></div>
@@ -1292,6 +1298,10 @@ function OrderTracker({order,loading,onBack}){
     <button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button>
     <section className={`tracking-hero ${order.status==='Listo'?'ready':''}`}><div className="tracking-live"><i/> PEDIDO EN VIVO</div><div className="tracking-hero-main"><div><span>{order.order_number}</span><h1>{state.label}</h1><p>{state.eta}</p></div><Clock3 size={42}/></div><OrderStatusSteps status={order.status}/></section>
     <div className="tracking-grid"><section className="tracking-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Tu pedido</h2><p>Lo que estamos preparando</p></div></div><OrderItemsSummary items={order.order_items||[]}/></section><section className="tracking-card tracking-details"><h2>Detalles</h2><div><span>Recoge a nombre de</span><b>{formatPersonName(order.customer_name||'')}</b></div><div><span>Pickup</span><b>{displayPickupLabel(order.pickup_label||ASAP_PICKUP_LABEL)}</b></div><div><span>Pago</span><b>{order.payment_method==='online'?'Pago en línea':'Pago al recoger'}</b></div><div><span>Total</span><strong>${Number(order.total||0).toFixed(2)}</strong></div></section></div>
+    <section className="tracking-help">
+      <div><span>¿Necesitas ayuda?</span><b>Envíanos un WhatsApp</b></div>
+      <a href={`https://wa.me/524412496395?text=${encodeURIComponent(`Hola, necesito ayuda con mi pedido ${order.order_number||''} de Chi-nito.`)}`} target="_blank" rel="noreferrer"><MessageCircle size={18}/> WhatsApp</a>
+    </section>
   </main>
 }
 
