@@ -4,17 +4,28 @@ import { supabase, supabaseConfigured } from './supabase'
 
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const activeStatuses=['Nuevo','Preparando','Listo']
-const isScheduledPickup=(label='')=>/^(?:Mañana\s*·\s*)?\d{2}:\d{2}$/i.test(String(label||'').trim())
+const PICKUP_DAY_INDEX={domingo:0,lunes:1,martes:2,'miércoles':3,miercoles:3,jueves:4,viernes:5,'sábado':6,sabado:6}
+const isScheduledPickup=(label='')=>/^(?:(?:Mañana|Domingo|Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes|Sábado|Sabado)\s*·\s*)?\d{2}:\d{2}$/i.test(String(label||'').trim())
 const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
 const scheduledPickupAt=(order)=>{
   if(!isScheduledPickup(order?.pickup_label))return null
   const raw=String(order.pickup_label||'').trim()
-  const tomorrow=/^Mañana\s*·/i.test(raw)
-  const time=raw.replace(/^Mañana\s*·\s*/i,'')
+  const prefixMatch=raw.match(/^([^·]+)\s*·\s*/i)
+  const prefix=prefixMatch?.[1]?.trim().toLocaleLowerCase('es-MX')||''
+  const time=prefixMatch?raw.slice(prefixMatch[0].length):raw
   const [hours,minutes]=time.split(':').map(Number)
   const scheduled=new Date(order.created_at)
-  if(tomorrow)scheduled.setDate(scheduled.getDate()+1)
   scheduled.setHours(hours,minutes,0,0)
+
+  if(prefix==='mañana'){
+    scheduled.setDate(scheduled.getDate()+1)
+  }else if(prefix&&Object.prototype.hasOwnProperty.call(PICKUP_DAY_INDEX,prefix)){
+    const target=PICKUP_DAY_INDEX[prefix]
+    const current=scheduled.getDay()
+    let daysAhead=(target-current+7)%7
+    if(daysAhead===0&&scheduled.getTime()<=new Date(order.created_at).getTime())daysAhead=7
+    scheduled.setDate(scheduled.getDate()+daysAhead)
+  }
   return scheduled
 }
 const minutesUntilPickup=(order,now=Date.now())=>{

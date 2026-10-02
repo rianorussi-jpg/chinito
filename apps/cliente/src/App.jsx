@@ -142,26 +142,58 @@ const PICKUP_OPEN_MINUTES=13*60
 const PICKUP_CLOSE_MINUTES=20*60
 const formatPickupMinutes=(minutes)=>`${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`
 const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
+const SERVICE_DAY_NAMES=['domingo','lunes','martes','miércoles','jueves','viernes','sábado']
+const SERVICE_DAY_LABELS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
 const getStoreScheduleState=(now=new Date())=>{
+  const day=now.getDay()
   const currentMinutes=now.getHours()*60+now.getMinutes()
-  if(currentMinutes>=PICKUP_OPEN_MINUTES&&currentMinutes<PICKUP_CLOSE_MINUTES){
-    return {open:true,period:'open',scheduleDay:'today'}
+  const monday=day===1
+  const withinHours=currentMinutes>=PICKUP_OPEN_MINUTES&&currentMinutes<PICKUP_CLOSE_MINUTES
+
+  // Chi-nito abre de martes a domingo. Los lunes siempre se programa para el martes.
+  if(!monday&&withinHours){
+    return {open:true,period:'open',scheduleDay:'today',offsetDays:0,targetDay:day}
+  }
+  if(monday){
+    return {open:false,period:'closed-day',scheduleDay:'tomorrow',offsetDays:1,targetDay:2}
   }
   if(currentMinutes<PICKUP_OPEN_MINUTES){
-    return {open:false,period:'before',scheduleDay:'today'}
+    return {open:false,period:'before',scheduleDay:'today',offsetDays:0,targetDay:day}
   }
-  return {open:false,period:'after',scheduleDay:'tomorrow'}
+  // El domingo después de las 20:00 se salta el lunes y se programa para el martes.
+  if(day===0){
+    return {open:false,period:'after',scheduleDay:'next-service-day',offsetDays:2,targetDay:2}
+  }
+  const targetDay=(day+1)%7
+  return {open:false,period:'after',scheduleDay:'tomorrow',offsetDays:1,targetDay}
 }
 const getPickupSlots=(now=new Date())=>{
   const schedule=getStoreScheduleState(now)
   const currentMinutes=now.getHours()*60+now.getMinutes()
-  const prefix=schedule.scheduleDay==='tomorrow'?'Mañana · ':''
+  const prefix=schedule.offsetDays===0?'':schedule.offsetDays===1?'Mañana · ':`${SERVICE_DAY_LABELS[schedule.targetDay]} · `
   const slots=[]
   for(let minutes=PICKUP_OPEN_MINUTES;minutes<=PICKUP_CLOSE_MINUTES;minutes+=30){
-    if(schedule.scheduleDay==='today'&&schedule.open&&minutes<=currentMinutes)continue
+    if(schedule.offsetDays===0&&schedule.open&&minutes<=currentMinutes)continue
     slots.push({value:`${prefix}${formatPickupMinutes(minutes)}`,label:formatPickupMinutes(minutes)})
   }
-  return {schedule,slots}
+  const pickupTitle=schedule.open
+    ?'Recoger más tarde'
+    :schedule.offsetDays===0
+      ?'Recoger hoy'
+      :schedule.offsetDays===1
+        ?'Recoger mañana'
+        :`Recoger ${SERVICE_DAY_NAMES[schedule.targetDay]}`
+  const pickupSubtitle=schedule.offsetDays===0
+    ?'Elige una hora para hoy'
+    :schedule.offsetDays===1
+      ?'Elige una hora para mañana'
+      :`Elige una hora para el ${SERVICE_DAY_NAMES[schedule.targetDay]}`
+  const slotsTitle=schedule.offsetDays===0
+    ?'Selecciona la hora'
+    :schedule.offsetDays===1
+      ?'Horarios de mañana'
+      :`Horarios del ${SERVICE_DAY_NAMES[schedule.targetDay]}`
+  return {schedule,slots,pickupTitle,pickupSubtitle,slotsTitle}
 }
 const formatPersonName=(value='')=>String(value||'')
   .trim()
@@ -834,7 +866,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
     <section className="section-wrap" id="menu-chinito">
       {!storeSchedule.open&&<div className="store-closed-banner" role="status">
         <div className="store-closed-icon"><Clock3 size={20}/></div>
-        <div><strong>Estamos cerrados</strong><span>Nuestro horario es de 13:00 a 20:00, pero puedes programar tu pedido.</span></div>
+        <div><strong>Estamos cerrados</strong><span>Nuestro horario es de martes a domingo de 13:00 a 20:00, pero puedes programar tu pedido.</span></div>
       </div>}
       <div className="section-head"><div><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
       <div className="product-grid">{PRODUCTOS.map((p)=>{const ok=available(p.slug);const pPrice=price(p.slug,p.price);return <article className={`product-card ${ok?'':'soldout-card'}`} key={p.id}>
@@ -1157,12 +1189,12 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
               </button>}
               <button type="button" className={pickupMode==='later'?'selected':''} onClick={()=>{setPickupMode('later');if((pickup===ASAP_PICKUP_LABEL||!pickupValues.includes(pickup))&&pickupSlots.length)setPickup(pickupSlots[0].value)}}>
                 <span className="checkout-option-radio"><i /></span>
-                <span><b>{storeIsOpen?'Recoger más tarde':pickupSchedule.schedule.scheduleDay==='tomorrow'?'Recoger mañana':'Recoger más tarde'}</b><small>{pickupSchedule.schedule.scheduleDay==='tomorrow'?'Elige una hora para mañana':'Elige una hora para hoy'}</small></span>
+                <span><b>{pickupSchedule.pickupTitle}</b><small>{pickupSchedule.pickupSubtitle}</small></span>
               </button>
             </div>
             {pickupMode==='later'&&<>
               {pickupSlots.length>0&&<div className="checkout-pickup-later">
-                <span>{pickupSchedule.schedule.scheduleDay==='tomorrow'?'Horarios de mañana':'Selecciona la hora'}</span>
+                <span>{pickupSchedule.slotsTitle}</span>
                 <div className="checkout-pickup-slots">
                   {pickupSlots.map(slot=><button type="button" key={slot.value} className={pickup===slot.value?'selected':''} onClick={()=>setPickup(slot.value)}><b>{slot.label}</b></button>)}
                 </div>
