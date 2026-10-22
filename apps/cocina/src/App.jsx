@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChefHat, Clock3, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
@@ -38,6 +38,156 @@ const isWaitingScheduledOrder=(order,now=Date.now())=>{
   return Boolean(scheduled&&scheduled.getTime()-now>15*60*1000)
 }
 
+
+const RECEIPT_COLS=42
+const thermalPlain=value=>String(value??'')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g,'')
+  .replace(/[“”]/g,'"')
+  .replace(/[‘’]/g,"'")
+  .replace(/·/g,'-')
+  .replace(/…/g,'...')
+  .replace(/[^\x20-\x7E\n]/g,'')
+const escapeHtml=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[c]))
+const thermalWrap=(value,width=RECEIPT_COLS)=>{
+  const text=thermalPlain(value).replace(/\s+/g,' ').trim()
+  if(!text)return []
+  const words=text.split(' '),lines=[]
+  let line=''
+  for(const word of words){
+    if(word.length>width){
+      if(line){lines.push(line);line=''}
+      for(let i=0;i<word.length;i+=width)lines.push(word.slice(i,i+width))
+    }else if(!line)line=word
+    else if(line.length+1+word.length<=width)line+=` ${word}`
+    else{lines.push(line);line=word}
+  }
+  if(line)lines.push(line)
+  return lines
+}
+const thermalCenter=value=>{
+  const text=thermalPlain(value).trim().slice(0,RECEIPT_COLS)
+  return `${' '.repeat(Math.max(0,Math.floor((RECEIPT_COLS-text.length)/2)))}${text}`
+}
+const thermalRule=(char='-')=>char.repeat(RECEIPT_COLS)
+const thermalPair=(left,right)=>{
+  const l=thermalPlain(left).trim(),r=thermalPlain(right).trim()
+  if(!r)return thermalWrap(l)
+  if(l.length+r.length+1<=RECEIPT_COLS)return [`${l}${' '.repeat(RECEIPT_COLS-l.length-r.length)}${r}`]
+  return [...thermalWrap(l),...thermalWrap(r).map(x=>x.padStart(RECEIPT_COLS))]
+}
+const thermalMoney=value=>`$${Number(value||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}`
+const thermalDate=value=>new Date(value).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
+const paymentLabel=order=>{
+  const method=String(order?.payment_method||'').toLowerCase()
+  if(['card','stripe','online','online_card'].includes(method))return 'Tarjeta en linea'
+  if(['cash','efectivo'].includes(method))return 'Efectivo'
+  if(['terminal','pos'].includes(method))return 'Terminal'
+  if(method==='pickup')return 'Pago al recoger'
+  return method?method:'No especificado'
+}
+const paymentStatusLabel=order=>order?.payment_status==='paid'?'PAGADO':'PENDIENTE'
+
+function kitchenProductLines(order){
+  const lines=[]
+  for(const item of (order.order_items||[])){
+    const qty=Math.max(1,Number(item.quantity||1))
+    lines.push(...thermalWrap(`${qty}x ${item.name||'Producto'}`))
+    if(item.base_name)lines.push(...thermalWrap(`  BASE: ${item.base_name}`))
+    if(item.variant)lines.push(...thermalWrap(`  ${item.variant}`))
+    if(Array.isArray(item.guisados)&&item.guisados.length){
+      lines.push(...thermalWrap('  GUISADOS:'))
+      item.guisados.forEach(g=>lines.push(...thermalWrap(`    - ${g}`)))
+    }
+    if(Array.isArray(item.extras)&&item.extras.length){
+      lines.push(...thermalWrap('  EXTRAS:'))
+      item.extras.forEach(extra=>{
+        const extraQty=Math.max(1,Number(extra?.quantity||1))
+        lines.push(...thermalWrap(`    - ${extraQty>1?`${extraQty}x `:''}${extra?.name||'Extra'}`))
+      })
+    }
+    lines.push(thermalRule('-'))
+  }
+  return lines
+}
+
+function saleProductLines(order){
+  const lines=[]
+  for(const item of (order.order_items||[])){
+    const qty=Math.max(1,Number(item.quantity||1))
+    const unit=Number(item.unit_price||0)
+    lines.push(...thermalPair(`${qty}x ${item.name||'Producto'}`,thermalMoney(unit*qty)))
+    if(item.base_name)lines.push(...thermalWrap(`  Base: ${item.base_name}`))
+    if(item.variant)lines.push(...thermalWrap(`  ${item.variant}`))
+    if(Array.isArray(item.guisados)&&item.guisados.length)lines.push(...thermalWrap(`  Guisados: ${item.guisados.join(', ')}`))
+    if(Array.isArray(item.extras)&&item.extras.length){
+      const extras=item.extras.map(extra=>`${Number(extra?.quantity||1)>1?`${extra.quantity}x `:''}${extra?.name||'Extra'}`).join(', ')
+      lines.push(...thermalWrap(`  Extras: ${extras}`))
+    }
+  }
+  return lines
+}
+
+const thermalStyles=`
+  @page{size:80mm auto;margin:0}
+  html,body{margin:0!important;padding:0!important;background:#fff!important;color:#000!important;width:80mm!important}
+  body{font-family:"Courier New",Courier,monospace!important}
+  .receipt{box-sizing:border-box!important;width:80mm!important;max-width:80mm!important;margin:0!important;padding:3mm 4mm 8mm!important;page-break-after:always!important;break-after:page!important}
+  .ticket-line{display:block!important;width:100%!important;min-height:3.5mm!important;margin:0!important;padding:0!important;white-space:pre-wrap!important;overflow-wrap:break-word!important;font-family:"Courier New",Courier,monospace!important;font-size:9pt!important;line-height:1.28!important;font-weight:600!important;color:#000!important}
+  .ticket-line.blank{height:3.5mm!important;min-height:3.5mm!important}
+  @media print{html,body{width:80mm!important}.receipt{width:80mm!important;max-width:80mm!important}body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
+`
+
+function openThermalPrint(order,lines,title){
+  const popup=window.open('','_blank','width=480,height=820')
+  if(!popup){window.alert('Permite ventanas emergentes para imprimir el ticket.');return}
+  const htmlLines=lines.map(line=>line.length?`<div class="ticket-line">${escapeHtml(line)}</div>`:'<div class="ticket-line blank">&nbsp;</div>').join('')
+  popup.document.open()
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} ${escapeHtml(order.order_number||'')}</title><style>${thermalStyles}</style></head><body><main class="receipt">${htmlLines}</main><script>window.onload=()=>setTimeout(()=>{window.print();window.onafterprint=()=>window.close()},350)<\/script></body></html>`)
+  popup.document.close()
+}
+
+function printKitchenTicket(order){
+  const lines=[
+    thermalCenter('CHI-NITO'),
+    thermalCenter('TICKET COCINA'),
+    thermalRule('='),
+    ...thermalWrap(`PEDIDO: ${order.order_number||''}`),
+    ...thermalWrap(`PICKUP: ${displayPickupLabel(order.pickup_label)||'Lo antes posible'}`),
+    ...thermalWrap(`HORA PEDIDO: ${new Date(order.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}`),
+    thermalRule('='),
+    ...kitchenProductLines(order),
+    '', '', ''
+  ]
+  openThermalPrint(order,lines,'Ticket cocina')
+}
+
+function printSaleTicket(order){
+  const lines=[
+    thermalCenter('CHI-NITO'),
+    thermalCenter('TICKET DE VENTA'),
+    thermalRule('='),
+    ...thermalWrap(`PEDIDO: ${order.order_number||''}`),
+    ...thermalWrap(`FECHA: ${thermalDate(order.created_at)}`),
+    ...thermalWrap(`CLIENTE: ${order.customer_name||'Mostrador'}`)
+  ]
+  if(order.customer_phone)lines.push(...thermalWrap(`TEL: ${order.customer_phone}`))
+  lines.push(
+    ...thermalWrap(`PICKUP: ${displayPickupLabel(order.pickup_label)||'Lo antes posible'}`),
+    ...thermalWrap(`PAGO: ${paymentLabel(order)} - ${paymentStatusLabel(order)}`),
+    thermalRule('='),
+    ...saleProductLines(order),
+    thermalRule('='),
+    ...thermalPair('TOTAL',thermalMoney(order.total)),
+    thermalRule('='),
+    '',
+    thermalCenter('GRACIAS POR SU COMPRA'),
+    thermalCenter('ESTE TICKET NO ES COMPROBANTE FISCAL'),
+    '', '', ''
+  )
+  openThermalPrint(order,lines,'Ticket de venta')
+}
+
 export default function App(){
  const [orders,setOrders]=useState([])
  const [menu,setMenu]=useState([])
@@ -48,6 +198,10 @@ export default function App(){
  const [newOrderOpen,setNewOrderOpen]=useState(false)
  const [scheduledOpen,setScheduledOpen]=useState(false)
  const [clock,setClock]=useState(()=>Date.now())
+ const [realtimeState,setRealtimeState]=useState(typeof navigator!=='undefined'&&!navigator.onLine?'offline':'connecting')
+ const [lastSyncAt,setLastSyncAt]=useState(null)
+ const [syncError,setSyncError]=useState('')
+ const loadRequestRef=useRef(0)
 
  const validateSession=useCallback(async(nextSession)=>{
    if(!nextSession || !supabase){setSession(null);setAuthReady(true);return}
@@ -70,12 +224,27 @@ export default function App(){
    return ()=>subscription.unsubscribe()
  },[validateSession])
 
- const loadOrders=useCallback(async()=>{
-   if(!supabase || !session)return
-   setLoading(true)
-   const {data,error}=await supabase.from('orders').select(orderSelect).in('status',activeStatuses).or('payment_method.eq.pickup,payment_status.eq.paid').order('created_at',{ascending:true})
-   if(!error&&data)setOrders(data)
-   setLoading(false)
+ const loadOrders=useCallback(async({silent=false}={})=>{
+   if(!supabase || !session)return false
+   const requestId=++loadRequestRef.current
+   if(!silent)setLoading(true)
+   try{
+     const {data,error}=await supabase.from('orders').select(orderSelect).in('status',activeStatuses).or('payment_method.eq.pickup,payment_status.eq.paid').order('created_at',{ascending:true})
+     if(error)throw error
+     if(requestId!==loadRequestRef.current)return false
+     setOrders(data||[])
+     setLastSyncAt(new Date())
+     setSyncError('')
+     return true
+   }catch(error){
+     if(requestId===loadRequestRef.current){
+       console.error('Kitchen orders load error',error)
+       setSyncError('No se pudo actualizar la lista de pedidos. Se reintentará automáticamente.')
+     }
+     return false
+   }finally{
+     if(requestId===loadRequestRef.current&&!silent)setLoading(false)
+   }
  },[session])
 
  const loadMenu=useCallback(async()=>{
@@ -84,20 +253,108 @@ export default function App(){
    if(!error&&data)setMenu(data)
  },[session])
 
- useEffect(()=>{loadOrders();loadMenu()},[loadOrders,loadMenu])
  useEffect(()=>{
-   const timer=window.setInterval(()=>setClock(Date.now()),30000)
+   const timer=window.setInterval(()=>setClock(Date.now()),1000)
    return ()=>window.clearInterval(timer)
  },[])
 
  useEffect(()=>{
    if(!supabase || !session)return
-   const channel=supabase.channel('kitchen-live')
-     .on('postgres_changes',{event:'*',schema:'public',table:'orders'},loadOrders)
-     .on('postgres_changes',{event:'*',schema:'public',table:'order_items'},loadOrders)
-     .on('postgres_changes',{event:'*',schema:'public',table:'menu_items'},loadMenu)
-     .subscribe()
-   return ()=>{supabase.removeChannel(channel)}
+   let disposed=false
+   let channel=null
+   let reconnectTimer=null
+   let channelAttempt=0
+
+   setSyncError('')
+   setRealtimeState(typeof navigator!=='undefined'&&!navigator.onLine?'offline':'connecting')
+
+   const scheduleReconnect=()=>{
+     if(disposed||typeof navigator!=='undefined'&&!navigator.onLine)return
+     if(reconnectTimer)window.clearTimeout(reconnectTimer)
+     reconnectTimer=window.setTimeout(()=>{
+       if(disposed)return
+       setRealtimeState('connecting')
+       connectRealtime()
+     },2500)
+   }
+
+   const connectRealtime=()=>{
+     if(disposed||!supabase)return
+     if(typeof navigator!=='undefined'&&!navigator.onLine){setRealtimeState('offline');return}
+     if(channel){
+       const oldChannel=channel
+       channel=null
+       supabase.removeChannel(oldChannel).catch(()=>{})
+     }
+     const nextChannel=supabase
+       .channel(`chinito-kitchen-live-${++channelAttempt}`)
+       .on('postgres_changes',{event:'*',schema:'public',table:'orders'},()=>loadOrders({silent:true}))
+       .on('postgres_changes',{event:'*',schema:'public',table:'order_items'},()=>loadOrders({silent:true}))
+       .on('postgres_changes',{event:'*',schema:'public',table:'menu_items'},()=>loadMenu())
+     channel=nextChannel
+     nextChannel.subscribe(status=>{
+       if(disposed||channel!==nextChannel)return
+       if(status==='SUBSCRIBED'){
+         if(reconnectTimer){window.clearTimeout(reconnectTimer);reconnectTimer=null}
+         setRealtimeState('live')
+         loadOrders({silent:true})
+         return
+       }
+       if(['TIMED_OUT','CHANNEL_ERROR','CLOSED'].includes(status)){
+         setRealtimeState(typeof navigator!=='undefined'&&!navigator.onLine?'offline':'degraded')
+         scheduleReconnect()
+       }
+     })
+   }
+
+   const online=()=>{
+     if(disposed)return
+     setRealtimeState('connecting')
+     loadOrders({silent:true})
+     loadMenu()
+     connectRealtime()
+   }
+   const offline=()=>{if(!disposed)setRealtimeState('offline')}
+   const refreshWhenVisible=()=>{
+     if(disposed)return
+     if(document.visibilityState==='visible'&&(typeof navigator==='undefined'||navigator.onLine))loadOrders({silent:true})
+   }
+   const refreshOnFocus=()=>{
+     if(disposed)return
+     if(typeof navigator==='undefined'||navigator.onLine)loadOrders({silent:true})
+   }
+
+   connectRealtime()
+   loadOrders()
+   loadMenu()
+
+   const safetyPoll=window.setInterval(()=>{
+     if(disposed)return
+     const visible=document.visibilityState==='visible'
+     const onlineNow=typeof navigator==='undefined'||navigator.onLine
+     if(visible&&onlineNow)loadOrders({silent:true})
+   },10000)
+
+   window.addEventListener('online',online)
+   window.addEventListener('offline',offline)
+   window.addEventListener('focus',refreshOnFocus)
+   document.addEventListener('visibilitychange',refreshWhenVisible)
+
+   return()=>{
+     disposed=true
+     loadRequestRef.current+=1
+     window.clearInterval(safetyPoll)
+     if(reconnectTimer)window.clearTimeout(reconnectTimer)
+     window.removeEventListener('online',online)
+     window.removeEventListener('offline',offline)
+     window.removeEventListener('focus',refreshOnFocus)
+     document.removeEventListener('visibilitychange',refreshWhenVisible)
+     if(channel){
+       const oldChannel=channel
+       channel=null
+       supabase.removeChannel(oldChannel).catch(()=>{})
+     }
+   }
  },[session,loadOrders,loadMenu])
 
  const scheduled=useMemo(()=>orders.filter(o=>isWaitingScheduledOrder(o,clock)).sort((a,b)=>scheduledPickupAt(a)-scheduledPickupAt(b)),[orders,clock])
@@ -119,7 +376,7 @@ export default function App(){
  if(!session)return <KitchenLogin error={authError}/>
 
  return <div className="kitchen">
-  <header><div className="brand"><img src="/logo.jpg" alt="Chi-nito"/><div><span>KITCHEN MODE</span><b>CHI-NITO</b></div></div><div className="header-right"><div className="online"><i/> {loading?'Actualizando…':'Cocina conectada'}</div><button onClick={loadOrders} aria-label="Actualizar"><RotateCcw size={17}/></button><button onClick={()=>supabase.auth.signOut()} aria-label="Cerrar sesión"><LogOut size={17}/></button></div></header>
+  <header><div className="brand"><img src="/logo.jpg" alt="Chi-nito"/><div><span>KITCHEN MODE</span><b>CHI-NITO</b></div></div><div className="header-right"><div className="online" title={syncError||`Última sincronización: ${lastSyncAt?lastSyncAt.toLocaleTimeString('es-MX'):'pendiente'}`}><i style={{background:realtimeState==='live'?'#22c55e':realtimeState==='offline'?'#ef4444':'#f59e0b'}}/> {loading?'Actualizando…':realtimeState==='live'?'En tiempo real':realtimeState==='offline'?'Sin conexión':realtimeState==='degraded'?'Reconectando…':'Conectando…'}</div><div className="online"><Clock3 size={15}/> {new Date(clock).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div><button onClick={()=>loadOrders()} aria-label="Actualizar"><RotateCcw size={17}/></button><button onClick={()=>supabase.auth.signOut()} aria-label="Cerrar sesión"><LogOut size={17}/></button></div></header>
   <main>
     <section className="k-head"><div><span className="eyebrow">PEDIDOS EN TIEMPO REAL</span><h1>Kitchen Mode</h1><p>Prepara, libera y entrega pedidos desde una sola vista.</p></div><div className="k-head-actions"><div className="counters"><Counter label="Preparando" n={preparing.length}/><Counter label="Listos" n={ready.length}/></div><button className="scheduled-orders-button" onClick={()=>setScheduledOpen(true)}><Clock3 size={18}/> Pedidos programados <b>{scheduled.length}</b></button><button className="new-order-button" onClick={()=>setNewOrderOpen(true)}><Plus size={19}/> Nuevo pedido</button></div></section>
 
@@ -152,7 +409,7 @@ function Ticket({order,advance}){
    <div className="ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div><em>{order.status==='Listo'?'Listo':'Preparando'}</em></div>
    <div className="pickup"><ShoppingBag size={18}/><div><b>{displayPickupLabel(order.pickup_label)}</b><span>Hace {elapsed} min · {order.customer_phone}</span></div><Clock3 size={18}/></div>
    <div className="items">{(order.order_items||[]).map(i=><KitchenItem item={i} key={i.id}/>)}</div>
-   <div className="ticket-actions"><button className="print" onClick={()=>window.print()}><Printer size={18}/> Imprimir</button><button className="advance" onClick={advance}>{order.status==='Listo'?<Check size={18}/>:<Flame size={18}/>} {next}</button></div>
+   <div className="ticket-actions"><button className="print" onClick={()=>printKitchenTicket(order)}><Printer size={18}/> Ticket cocina</button><button className="print" onClick={()=>printSaleTicket(order)}><Printer size={18}/> Ticket de venta</button><button className="advance" onClick={advance}>{order.status==='Listo'?<Check size={18}/>:<Flame size={18}/>} {next}</button></div>
  </article>
 }
 
