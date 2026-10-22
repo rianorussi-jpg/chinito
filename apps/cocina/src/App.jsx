@@ -39,7 +39,7 @@ const isWaitingScheduledOrder=(order,now=Date.now())=>{
 }
 
 
-const RECEIPT_COLS=42
+const RECEIPT_COLS=36
 const thermalPlain=value=>String(value??'')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g,'')
@@ -129,13 +129,17 @@ function saleProductLines(order){
 }
 
 const thermalStyles=`
-  @page{size:80mm auto;margin:0}
-  html,body{margin:0!important;padding:0!important;background:#fff!important;color:#000!important;width:80mm!important}
+  @page{margin:2mm 3mm 5mm}
+  html,body{margin:0!important;padding:0!important;background:#fff!important;color:#000!important}
   body{font-family:"Courier New",Courier,monospace!important}
-  .receipt{box-sizing:border-box!important;width:80mm!important;max-width:80mm!important;margin:0!important;padding:3mm 4mm 8mm!important;page-break-after:always!important;break-after:page!important}
-  .ticket-line{display:block!important;width:100%!important;min-height:3.5mm!important;margin:0!important;padding:0!important;white-space:pre-wrap!important;overflow-wrap:break-word!important;font-family:"Courier New",Courier,monospace!important;font-size:9pt!important;line-height:1.28!important;font-weight:600!important;color:#000!important}
-  .ticket-line.blank{height:3.5mm!important;min-height:3.5mm!important}
-  @media print{html,body{width:80mm!important}.receipt{width:80mm!important;max-width:80mm!important}body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
+  .receipt{box-sizing:border-box!important;width:70mm!important;max-width:70mm!important;margin:0!important;padding:0!important}
+  .ticket-line{display:block!important;box-sizing:border-box!important;width:100%!important;min-height:3.3mm!important;margin:0!important;padding:0!important;white-space:pre-wrap!important;word-break:normal!important;overflow-wrap:break-word!important;font-family:"Courier New",Courier,monospace!important;font-size:8.2pt!important;line-height:1.25!important;font-weight:600!important;letter-spacing:0!important;color:#000!important;clear:both!important;break-inside:avoid!important}
+  .ticket-line.blank{height:3.3mm!important;min-height:3.3mm!important}
+  @media print{
+    html,body{width:auto!important;max-width:none!important}
+    .receipt{width:70mm!important;max-width:70mm!important}
+    body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  }
 `
 
 function openThermalPrint(order,lines,title){
