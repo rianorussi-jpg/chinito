@@ -416,10 +416,10 @@ export default function App(){
 
     <section className="k-board">
       <OrderLane title="Preparando" subtitle="Todos los pedidos activos en preparación" count={preparing.length} tone="prep">
-        {preparing.length?preparing.map(o=><Ticket key={o.id} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos activos aparecerán aquí automáticamente, aunque sean de días anteriores."/>}
+        {preparing.length?preparing.map(o=><Ticket key={o.id} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)} onAdvance={()=>advance(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos activos aparecerán aquí automáticamente, aunque sean de días anteriores."/>}
       </OrderLane>
       <OrderLane title="Listos para recoger" subtitle="Esperando al cliente" count={ready.length} tone="ready">
-        {ready.length?ready.map(o=><Ticket key={o.id} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)}/>):<LaneEmpty icon={<Check size={34}/>} title="Nada listo todavía" text="Cuando marques un pedido como listo aparecerá en esta columna."/>}
+        {ready.length?ready.map(o=><Ticket key={o.id} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)} onAdvance={()=>advance(o)}/>):<LaneEmpty icon={<Check size={34}/>} title="Nada listo todavía" text="Cuando marques un pedido como listo aparecerá en esta columna."/>}
       </OrderLane>
     </section>
   </main>
@@ -437,14 +437,25 @@ function OrderLane({title,subtitle,count,tone,children}){
 
 function LaneEmpty({icon,title,text}){return <div className="lane-empty">{icon}<h3>{title}</h3><p>{text}</p></div>}
 
-function Ticket({order,onAcknowledge,onDetails}){
+function Ticket({order,onAcknowledge,onDetails,onAdvance}){
  const acknowledged=Boolean(order.kitchen_acknowledged_at)
+ const isReady=order.status==='Listo'
  return <article className={`ticket compact-ticket ${order.status.toLowerCase()} ${acknowledged?'acknowledged':'unacknowledged'}`}>
    <div className="ticket-top compact-ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div></div>
+
    <div className="compact-ticket-actions">
-     <button className={`acknowledge ${acknowledged?'done':''}`} disabled={acknowledged} onClick={onAcknowledge}><Check size={17}/> {acknowledged?'Enterado':'Enterado'}</button>
+     <button className={`acknowledge ${acknowledged?'done':''}`} disabled={acknowledged} onClick={onAcknowledge}><Check size={17}/> Enterado</button>
      <button className="details-button" onClick={onDetails}><Eye size={17}/> Ver detalles</button>
    </div>
+
+   <div className="compact-ticket-print-actions">
+     <button onClick={()=>printSaleTicket(order)}><Printer size={17}/> Ticket venta</button>
+     <button onClick={()=>printKitchenTicket(order)}><Printer size={17}/> Ticket cocina</button>
+   </div>
+
+   <button className={`compact-ticket-advance ${isReady?'deliver':''}`} onClick={onAdvance}>
+     {isReady?<Check size={18}/>:<Flame size={18}/>} {isReady?'Entregar pedido':'Marcar listo'}
+   </button>
  </article>
 }
 

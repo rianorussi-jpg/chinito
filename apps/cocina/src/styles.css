@@ -71,3 +71,53 @@
 .order-detail-body{padding:16px;display:grid;gap:13px}.order-detail-body>section,.order-detail-meta{background:#fff;border-radius:17px;padding:14px;border:1px solid #e9ded5}.order-detail-body h3{margin:0 0 10px;font-size:14px}.order-detail-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.order-detail-meta span,.order-detail-meta b{display:block}.order-detail-meta span{font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:#8a7e76;font-weight:800}.order-detail-meta b{font-size:11px;margin-top:3px}.detail-items{display:grid;gap:8px}.order-financial-detail>div{display:flex;align-items:center;justify-content:space-between;padding:7px 0;font-size:11px;border-bottom:1px solid #f0e7e0}.order-financial-detail>div:last-child{border-bottom:0}.order-financial-detail .discount{color:#16814b}.order-financial-detail .total{font-size:15px;font-weight:900;padding-top:11px}.order-financial-detail .total b{color:var(--red);font-size:19px}
 .order-detail-modal>footer{position:sticky;bottom:0;background:#fff;padding:12px 16px;border-top:1px solid #e8ddd5;display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px}.order-detail-modal>footer button{border:0;border-radius:11px;padding:11px 8px;font-weight:800;font-size:10px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;background:#eee7e1}.order-detail-modal>footer .acknowledge-detail,.order-detail-modal>footer .advance-detail{background:var(--red);color:#fff}.order-detail-modal>footer .advance-detail{background:#171313}
 @media(max-width:620px){.compact-ticket-actions{grid-template-columns:1fr}.order-detail-overlay{padding:0}.order-detail-modal{width:100%;height:100dvh;max-height:none;border-radius:0}.order-detail-meta{grid-template-columns:1fr}.order-detail-modal>footer{grid-template-columns:1fr 1fr}}
+
+/* Acciones visibles directamente en cada ficha */
+.compact-ticket-print-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-top:8px;
+}
+.compact-ticket-print-actions button{
+  border:0;
+  border-radius:12px;
+  padding:11px 9px;
+  font-weight:850;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  cursor:pointer;
+  background:#efe8e2;
+  color:#171313;
+}
+.compact-ticket.unacknowledged .compact-ticket-print-actions button{
+  background:#fff;
+  color:#171313;
+}
+.compact-ticket-advance{
+  width:100%;
+  margin-top:8px;
+  border:0;
+  border-radius:12px;
+  padding:13px 12px;
+  font-weight:900;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  cursor:pointer;
+  background:#171313;
+  color:#fff;
+}
+.compact-ticket-advance.deliver{
+  background:#15955a;
+}
+.compact-ticket.unacknowledged .compact-ticket-advance{
+  background:#171313;
+  color:#fff;
+}
+@media(max-width:620px){
+  .compact-ticket-print-actions{grid-template-columns:1fr 1fr}
+}
