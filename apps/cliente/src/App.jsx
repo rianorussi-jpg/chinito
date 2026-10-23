@@ -138,6 +138,7 @@ const buildOrderPayload=(items=[])=>items.map(item=>{
 const CART_STORAGE_KEY='chinito_cart_v1'
 const STRIPE_PENDING_ORDER_KEY='chinito_pending_stripe_order_v1'
 const ASAP_PICKUP_LABEL='Lo antes posible · 10–15 min'
+const FIRST_ORDER_GIFT_AMOUNT=50
 const PICKUP_OPEN_MINUTES=13*60
 const PICKUP_CLOSE_MINUTES=20*60
 const formatPickupMinutes=(minutes)=>`${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`
@@ -214,7 +215,7 @@ const screenFromHash=()=>{
   return 'home'
 }
 
-const CUSTOMER_ORDER_SELECT='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const CUSTOMER_ORDER_SELECT='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const ACTIVE_ORDER_STATUSES=['Nuevo','Preparando','Listo']
 const customerOrderState=(status)=>{
   if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:1}
@@ -255,6 +256,8 @@ function App(){
   const [cashbackBalance,setCashbackBalance]=useState(0)
   const [cashbackLoading,setCashbackLoading]=useState(false)
   const [redeemCashback,setRedeemCashback]=useState(false)
+  const [firstOrderGiftEligible,setFirstOrderGiftEligible]=useState(false)
+  const [firstOrderGiftLoading,setFirstOrderGiftLoading]=useState(true)
   const [catalog,setCatalog]=useState({})
   const [catalogRows,setCatalogRows]=useState(null)
   const [storeSettings,setStoreSettings]=useState(null)
@@ -284,6 +287,7 @@ function App(){
     const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,current)=>{
       if(!mounted) return
       setSession(current)
+      setFirstOrderGiftLoading(Boolean(current?.user))
       if(_event==='SIGNED_OUT'){setName('');setPhone('')}
       if(_event==='PASSWORD_RECOVERY'){
         setAuthIntent('recovery')
@@ -294,6 +298,7 @@ function App(){
     supabase.auth.getSession().then(({data,error})=>{
       if(!mounted) return
       setSession(data?.session||null)
+      setFirstOrderGiftLoading(Boolean(data?.session?.user))
       setAuthReady(true)
       if(error) console.warn('No se pudo recuperar la sesión:',error.message)
     }).catch(()=>{if(mounted)setAuthReady(true)})
@@ -373,6 +378,30 @@ function App(){
     return ()=>{cancelled=true}
   },[session?.user?.id])
 
+  // El regalo de primer pedido se determina con el historial real de Supabase.
+  // Pedidos cancelados no consumen la promoción. Un pedido pickup confirmado o un pago online pagado sí.
+  useEffect(()=>{
+    const userId=session?.user?.id
+    if(!supabase||!userId){setFirstOrderGiftEligible(false);setFirstOrderGiftLoading(false);return}
+    let active=true
+    const refresh=async()=>{
+      setFirstOrderGiftLoading(true)
+      const {count,error}=await supabase.from('orders')
+        .select('id',{count:'exact',head:true})
+        .eq('customer_id',userId)
+        .neq('status','Cancelado')
+        .or('first_order_discount.gt.0,payment_method.eq.pickup,payment_status.eq.paid')
+      if(!active)return
+      if(error){
+        console.warn('No se pudo consultar el regalo de primer pedido:',error.message)
+        setFirstOrderGiftEligible(false)
+      }else setFirstOrderGiftEligible(Number(count||0)===0)
+      setFirstOrderGiftLoading(false)
+    }
+    refresh()
+    return()=>{active=false}
+  },[session?.user?.id,screen])
+
   // El saldo es exclusivamente el registrado en Supabase; nunca se calcula ni edita localmente.
   useEffect(()=>{
     const userId=session?.user?.id
@@ -430,6 +459,7 @@ function App(){
     setCartItems([])
     try{window.localStorage.removeItem(STRIPE_PENDING_ORDER_KEY)}catch{/* noop */}
     setRedeemCashback(false)
+    if(Number(order.first_order_discount||0)>0)setFirstOrderGiftEligible(false)
     setCashbackBalance(prev=>Math.max(0,prev-Number(order.cashback_used||0)))
     setPlaced(true)
     setScreen('home')
@@ -687,6 +717,7 @@ function App(){
         payment_method:'pickup',
         payment_status:'pending',
         status:created?.status==='Listo'?'Listo':'Preparando',
+        first_order_discount:firstOrderGiftDiscount,
         order_items:displayCart.map(item=>{
           const configured=item.kind==='configured'
           return {
@@ -706,6 +737,7 @@ function App(){
       setActiveOrder(orderSnapshot)
       setCashbackBalance(Math.max(0,Number(created?.cashback_balance||0)))
       setRedeemCashback(false)
+      if(firstOrderGiftDiscount>0)setFirstOrderGiftEligible(false)
       setCartItems([])
       setPlaced(true)
     }catch(err){
@@ -725,16 +757,27 @@ function App(){
   }),[cartItems,catalog])
   const cartCount=cartItems.reduce((sum,item)=>sum+item.quantity,0)
   const cartTotal=useMemo(()=>displayCart.reduce((sum,item)=>sum+(itemUnitPrice(item)*item.quantity),0),[displayCart])
+  const firstOrderGiftDiscount=useMemo(()=>{
+    if(!firstOrderGiftEligible||firstOrderGiftLoading||cartTotal<=0)return 0
+    let gift=Math.round(Math.min(FIRST_ORDER_GIFT_AMOUNT,cartTotal)*100)/100
+    // Stripe no acepta cobros positivos menores a $10 MXN. Si el regalo dejara $1–$9,
+    // se ajusta únicamente lo necesario para dejar $10; si cubre todo el pedido, puede quedar en $0.
+    if(payment==='online'&&gift<cartTotal&&(cartTotal-gift)<10){
+      gift=Math.max(0,Math.round((cartTotal-10)*100)/100)
+    }
+    return gift
+  },[firstOrderGiftEligible,firstOrderGiftLoading,cartTotal,payment])
+  const subtotalAfterFirstOrderGift=Math.max(0,Math.round((cartTotal-firstOrderGiftDiscount)*100)/100)
   const cashbackDiscount=useMemo(()=>{
     if(!redeemCashback)return 0
-    const maxDiscount=Math.round(Math.min(cashbackBalance,cartTotal)*100)/100
-    if(payment==='online'&&maxDiscount<cartTotal&&(cartTotal-maxDiscount)<10){
-      return Math.max(0,Math.round((cartTotal-10)*100)/100)
+    const maxDiscount=Math.round(Math.min(cashbackBalance,subtotalAfterFirstOrderGift)*100)/100
+    if(payment==='online'&&maxDiscount<subtotalAfterFirstOrderGift&&(subtotalAfterFirstOrderGift-maxDiscount)<10){
+      return Math.max(0,Math.round((subtotalAfterFirstOrderGift-10)*100)/100)
     }
     return maxDiscount
-  },[redeemCashback,cashbackBalance,cartTotal,payment])
+  },[redeemCashback,cashbackBalance,subtotalAfterFirstOrderGift,payment])
   const orderPayload=useMemo(()=>buildOrderPayload(cartItems),[cartItems])
-  const stripeDraftKey=useMemo(()=>JSON.stringify({pickup,cashback:cashbackDiscount,items:orderPayload}),[pickup,cashbackDiscount,orderPayload])
+  const stripeDraftKey=useMemo(()=>JSON.stringify({pickup,cashback:cashbackDiscount,firstOrderGift:firstOrderGiftDiscount,items:orderPayload}),[pickup,cashbackDiscount,firstOrderGiftDiscount,orderPayload])
 
   // Para mostrar la tarjeta dentro del checkout necesitamos una Checkout Session en modo Elements.
   // Si cambia el horario, cashback o carrito, cancelamos el borrador anterior y generamos uno nuevo.
@@ -743,7 +786,7 @@ function App(){
     let alive=true
     let timer=null
 
-    if(screen!=='cart'||payment!=='online'||!orderPayload.length){
+    if(screen!=='cart'||payment!=='online'||!orderPayload.length||firstOrderGiftLoading){
       if(stripeCheckout?.order_id){
         const staleOrderId=stripeCheckout.order_id
         setStripeCheckout(null)
@@ -791,7 +834,7 @@ function App(){
       alive=false
       if(timer)window.clearTimeout(timer)
     }
-  },[screen,payment,session?.user?.id,stripeDraftKey])
+  },[screen,payment,session?.user?.id,stripeDraftKey,firstOrderGiftLoading])
   const goHome=()=>{
     if(typeof window!=='undefined'&&window.location.hash){
       window.history.replaceState(null,'',`${window.location.pathname}${window.location.search}`)
@@ -823,7 +866,7 @@ function App(){
     {screen==='terms' && <LegalPage type="terms" onBack={goHome} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='cart' && !session?.user && authReady && <div className="auth-checkout-gate"><p>Inicia sesión para continuar con tu pedido.</p><button className="primary" onClick={()=>{setScreen('home');setAuthIntent('checkout');setProfileOpen(true)}}>Iniciar sesión</button></div>}
-    {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
+    {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} firstOrderGiftDiscount={firstOrderGiftDiscount} firstOrderGiftLoading={firstOrderGiftLoading} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
     {profileOpen && <ProfileDrawer
       session={session}
@@ -1111,8 +1154,8 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
   </div>
 }
 
-function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,stripeClientSecret,stripeLoading,stripeError,stripeReady,onStripeReady,onStripeError,onBack,onPlace,placing,placeError}){
-  const finalTotal=Math.max(0,total-cashbackDiscount)
+function Cart({items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,stripeClientSecret,stripeLoading,stripeError,stripeReady,onStripeReady,onStripeError,onBack,onPlace,placing,placeError}){
+  const finalTotal=Math.max(0,total-firstOrderGiftDiscount-cashbackDiscount)
   const itemCount=items.reduce((sum,item)=>sum+Number(item.quantity||0),0)
   const displayName=formatPersonName(name)
   const [pickupMode,setPickupMode]=useState(()=>pickup===ASAP_PICKUP_LABEL?'asap':'later')
@@ -1231,6 +1274,14 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
           </div>
         </section>
 
+        {firstOrderGiftDiscount>0&&<section className="checkout-section checkout-first-order-gift">
+          <div className="checkout-section-title">
+            <span className="checkout-section-number first-order-gift-number">🎁</span>
+            <div><h2>Regalo de primer pedido</h2><p>Te descontamos $50 en tu primera compra.</p></div>
+          </div>
+          <div className="first-order-gift-box"><Check size={17}/><div><b>Descuento aplicado</b><span>−${firstOrderGiftDiscount.toFixed(2)}</span></div></div>
+        </section>}
+
         <section className="checkout-section checkout-cashback-v2">
           <div className="checkout-section-title cashback-title">
             <span className="checkout-section-number cashback-number">$</span>
@@ -1243,7 +1294,7 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
               <small>Acumulas $1 por cada $10 al completar pedidos.</small>
             </div>
             <label className="checkout-switch">
-              <input type="checkbox" checked={redeemCashback&&cashbackBalance>0} onChange={e=>setRedeemCashback(e.target.checked)} disabled={cashbackLoading||cashbackBalance<=0||total<=0}/>
+              <input type="checkbox" checked={redeemCashback&&cashbackBalance>0} onChange={e=>setRedeemCashback(e.target.checked)} disabled={cashbackLoading||firstOrderGiftLoading||cashbackBalance<=0||(total-firstOrderGiftDiscount)<=0}/>
               <span className="checkout-switch-track"><i /></span>
               <b>Usar saldo</b>
             </label>
@@ -1285,12 +1336,13 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
         <div className="checkout-summary-divider" />
         <div className="checkout-summary-lines">
           <div><span>Subtotal</span><strong>${total.toFixed(2)}</strong></div>
+          {firstOrderGiftDiscount>0&&<div className="discount first-order-discount"><span>Regalo primer pedido</span><strong>−${firstOrderGiftDiscount.toFixed(2)}</strong></div>}
           {cashbackDiscount>0&&<div className="discount"><span>Cashback</span><strong>−${cashbackDiscount.toFixed(2)}</strong></div>}
           <div><span>Pickup</span><strong>Gratis</strong></div>
         </div>
         <div className="checkout-summary-total"><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
         {placeError&&<p className="checkout-error">{placeError}</p>}
-        <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>
+        <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>
           {placing?(payment==='online'?'Procesando pago…':'Creando pedido…'):(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar pedido')} {!placing&&<ChevronRight size={18}/>}
         </button>
         <p className="checkout-legal-note">{payment==='online'?'Tu tarjeta se captura aquí mismo. Si tu banco solicita 3D Secure, Stripe puede abrir una verificación y regresarte automáticamente a Chi-nito.':'Al confirmar, tu pedido se enviará directamente a cocina.'}</p>
@@ -1299,7 +1351,7 @@ function Cart({items,total,cashbackBalance,cashbackLoading,cashbackDiscount,rede
 
     <div className="checkout-mobile-bar">
       <div><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
-      <button className="primary" disabled={!items.length||!name||!phone||placing||cashbackLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar')} <ChevronRight size={18}/></button>
+      <button className="primary" disabled={!items.length||!name||!phone||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar')} <ChevronRight size={18}/></button>
     </div>
   </main>
 }

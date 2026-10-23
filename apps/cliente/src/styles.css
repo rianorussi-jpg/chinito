@@ -2694,3 +2694,14 @@
   .tracking-help{align-items:stretch;flex-direction:column}
   .tracking-help a{width:100%}
 }
+
+
+/* Regalo automático de $50 en el primer pedido */
+.checkout-first-order-gift{background:linear-gradient(180deg,#fff 0%,#fff8ed 100%);border-color:#f0dfc4}
+.first-order-gift-number{font-size:14px!important;background:#171313!important}
+.first-order-gift-box{display:flex;align-items:center;gap:10px;padding:13px 14px;border:1px solid #efd8ae;border-radius:14px;background:#fffaf0;color:#7a4a08}
+.first-order-gift-box>svg{flex:0 0 auto;color:#16814b}
+.first-order-gift-box>div{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%}
+.first-order-gift-box b{font-size:11px}
+.first-order-gift-box span{font-size:16px;font-weight:900;color:#16814b}
+.checkout-summary-lines .first-order-discount span,.checkout-summary-lines .first-order-discount strong{color:#16814b}

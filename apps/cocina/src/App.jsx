@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChefHat, Clock3, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UserRound, X } from 'lucide-react'
+import { Check, ChefHat, Clock3, Eye, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,kitchen_acknowledged_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const activeStatuses=['Nuevo','Preparando','Listo']
 const PICKUP_DAY_INDEX={domingo:0,lunes:1,martes:2,'miércoles':3,miercoles:3,jueves:4,viernes:5,'sábado':6,sabado:6}
 const isScheduledPickup=(label='')=>/^(?:(?:Mañana|Domingo|Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes|Sábado|Sabado)\s*·\s*)?\d{2}:\d{2}$/i.test(String(label||'').trim())
@@ -87,6 +87,7 @@ const paymentLabel=order=>{
   return method?method:'No especificado'
 }
 const paymentStatusLabel=order=>order?.payment_status==='paid'?'PAGADO':'PENDIENTE'
+const orderSubtotal=order=>Number(order?.total||0)+Number(order?.cashback_used||0)+Number(order?.first_order_discount||0)
 
 function kitchenProductLines(order){
   const lines=[]
@@ -182,6 +183,11 @@ function printSaleTicket(order){
     thermalRule('='),
     ...saleProductLines(order),
     thermalRule('='),
+    ...thermalPair('SUBTOTAL',thermalMoney(orderSubtotal(order)))
+  )
+  if(Number(order.first_order_discount||0)>0)lines.push(...thermalPair('REGALO PRIMER PEDIDO',`-${thermalMoney(order.first_order_discount)}`))
+  if(Number(order.cashback_used||0)>0)lines.push(...thermalPair('CASHBACK',`-${thermalMoney(order.cashback_used)}`))
+  lines.push(
     ...thermalPair('TOTAL',thermalMoney(order.total)),
     thermalRule('='),
     '',
@@ -201,6 +207,7 @@ export default function App(){
  const [loading,setLoading]=useState(false)
  const [newOrderOpen,setNewOrderOpen]=useState(false)
  const [scheduledOpen,setScheduledOpen]=useState(false)
+ const [detailOrder,setDetailOrder]=useState(null)
  const [clock,setClock]=useState(()=>Date.now())
  const [realtimeState,setRealtimeState]=useState(typeof navigator!=='undefined'&&!navigator.onLine?'offline':'connecting')
  const [lastSyncAt,setLastSyncAt]=useState(null)
@@ -236,7 +243,9 @@ export default function App(){
      const {data,error}=await supabase.from('orders').select(orderSelect).in('status',activeStatuses).or('payment_method.eq.pickup,payment_status.eq.paid').order('created_at',{ascending:true})
      if(error)throw error
      if(requestId!==loadRequestRef.current)return false
-     setOrders(data||[])
+     const nextOrders=data||[]
+     setOrders(nextOrders)
+     setDetailOrder(current=>current?nextOrders.find(o=>String(o.id)===String(current.id))||current:current)
      setLastSyncAt(new Date())
      setSyncError('')
      return true
@@ -366,12 +375,33 @@ export default function App(){
  const preparing=useMemo(()=>orders.filter(o=>(o.status==='Nuevo'||o.status==='Preparando')&&!scheduledIds.has(o.id)),[orders,scheduledIds])
  const ready=useMemo(()=>orders.filter(o=>o.status==='Listo'),[orders])
 
+ const acknowledge=async(order)=>{
+   if(!order?.id||order.kitchen_acknowledged_at)return true
+   const acknowledgedAt=new Date().toISOString()
+   const {error}=await supabase.from('orders').update({kitchen_acknowledged_at:acknowledgedAt}).eq('id',order.id)
+   if(error){
+     console.error('Kitchen acknowledge error',error)
+     window.alert('No pudimos marcar el pedido como enterado. Revisa la conexión e intenta nuevamente.')
+     return false
+   }
+   setOrders(prev=>prev.map(o=>o.id===order.id?{...o,kitchen_acknowledged_at:acknowledgedAt}:o))
+   setDetailOrder(current=>current?.id===order.id?{...current,kitchen_acknowledged_at:acknowledgedAt}:current)
+   return true
+ }
+
  const advance=async(order)=>{
+   if(order.status!=='Listo'&&!order.kitchen_acknowledged_at){
+     window.alert('Primero toca “Enterado” para confirmar que Cocina ya vio este pedido.')
+     return
+   }
    const next=order.status==='Listo'?'Entregado':'Listo'
    const {error}=await supabase.from('orders').update({status:next}).eq('id',order.id)
    if(!error){
-     if(next==='Entregado')setOrders(prev=>prev.filter(o=>o.id!==order.id))
-     else setOrders(prev=>prev.map(o=>o.id===order.id?{...o,status:next}:o))
+     if(next==='Entregado'){setOrders(prev=>prev.filter(o=>o.id!==order.id));setDetailOrder(null)}
+     else{
+       setOrders(prev=>prev.map(o=>o.id===order.id?{...o,status:next}:o))
+       setDetailOrder(current=>current?.id===order.id?{...current,status:next}:current)
+     }
    }
  }
 
@@ -386,13 +416,14 @@ export default function App(){
 
     <section className="k-board">
       <OrderLane title="Preparando" subtitle="Todos los pedidos activos en preparación" count={preparing.length} tone="prep">
-        {preparing.length?preparing.map(o=><Ticket key={o.id} order={o} advance={()=>advance(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos activos aparecerán aquí automáticamente, aunque sean de días anteriores."/>}
+        {preparing.length?preparing.map(o=><Ticket key={o.id} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos activos aparecerán aquí automáticamente, aunque sean de días anteriores."/>}
       </OrderLane>
       <OrderLane title="Listos para recoger" subtitle="Esperando al cliente" count={ready.length} tone="ready">
-        {ready.length?ready.map(o=><Ticket key={o.id} order={o} advance={()=>advance(o)}/>):<LaneEmpty icon={<Check size={34}/>} title="Nada listo todavía" text="Cuando marques un pedido como listo aparecerá en esta columna."/>}
+        {ready.length?ready.map(o=><Ticket key={o.id} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)}/>):<LaneEmpty icon={<Check size={34}/>} title="Nada listo todavía" text="Cuando marques un pedido como listo aparecerá en esta columna."/>}
       </OrderLane>
     </section>
   </main>
+  {detailOrder&&<OrderDetailsModal order={detailOrder} onClose={()=>setDetailOrder(null)} onAcknowledge={()=>acknowledge(detailOrder)} onAdvance={()=>advance(detailOrder)}/>}
   {scheduledOpen&&<ScheduledOrdersModal orders={scheduled} now={clock} onClose={()=>setScheduledOpen(false)}/>}
   {newOrderOpen&&<NewOrderModal menu={menu} onClose={()=>setNewOrderOpen(false)} onCreated={()=>{setNewOrderOpen(false);loadOrders()}}/>}
  </div>
@@ -406,15 +437,36 @@ function OrderLane({title,subtitle,count,tone,children}){
 
 function LaneEmpty({icon,title,text}){return <div className="lane-empty">{icon}<h3>{title}</h3><p>{text}</p></div>}
 
-function Ticket({order,advance}){
- const next=order.status==='Listo'?'Entregar pedido':'Marcar como listo'
- const elapsed=Math.max(0,Math.floor((Date.now()-new Date(order.created_at).getTime())/60000))
- return <article className={`ticket ${order.status.toLowerCase()}`}>
-   <div className="ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div><em>{order.status==='Listo'?'Listo':'Preparando'}</em></div>
-   <div className="pickup"><ShoppingBag size={18}/><div><b>{displayPickupLabel(order.pickup_label)}</b><span>Hace {elapsed} min · {order.customer_phone}</span></div><Clock3 size={18}/></div>
-   <div className="items">{(order.order_items||[]).map(i=><KitchenItem item={i} key={i.id}/>)}</div>
-   <div className="ticket-actions"><button className="print" onClick={()=>printKitchenTicket(order)}><Printer size={18}/> Ticket cocina</button><button className="print" onClick={()=>printSaleTicket(order)}><Printer size={18}/> Ticket de venta</button><button className="advance" onClick={advance}>{order.status==='Listo'?<Check size={18}/>:<Flame size={18}/>} {next}</button></div>
+function Ticket({order,onAcknowledge,onDetails}){
+ const acknowledged=Boolean(order.kitchen_acknowledged_at)
+ return <article className={`ticket compact-ticket ${order.status.toLowerCase()} ${acknowledged?'acknowledged':'unacknowledged'}`}>
+   <div className="ticket-top compact-ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div></div>
+   <div className="compact-ticket-actions">
+     <button className={`acknowledge ${acknowledged?'done':''}`} disabled={acknowledged} onClick={onAcknowledge}><Check size={17}/> {acknowledged?'Enterado':'Enterado'}</button>
+     <button className="details-button" onClick={onDetails}><Eye size={17}/> Ver detalles</button>
+   </div>
  </article>
+}
+
+function OrderDetailsModal({order,onClose,onAcknowledge,onAdvance}){
+ const acknowledged=Boolean(order.kitchen_acknowledged_at)
+ const subtotal=orderSubtotal(order)
+ return <div className="order-detail-overlay" onMouseDown={onClose}>
+   <section className="order-detail-modal" onMouseDown={e=>e.stopPropagation()}>
+     <header><div><span>PEDIDO {order.order_number}</span><h2>{order.customer_name}</h2><p>{displayPickupLabel(order.pickup_label)} · {order.customer_phone||'Sin teléfono'}</p></div><button onClick={onClose} aria-label="Cerrar"><X size={21}/></button></header>
+     <div className="order-detail-body">
+       <div className="order-detail-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)} · {paymentStatusLabel(order)}</b></div><div><span>Recibido</span><b>{thermalDate(order.created_at)}</b></div></div>
+       <section><h3>Productos</h3><div className="detail-items">{(order.order_items||[]).map(i=><KitchenItem item={i} key={i.id}/>)}</div></section>
+       <section className="order-financial-detail"><h3>Desglose</h3><div><span>Subtotal</span><b>{thermalMoney(subtotal)}</b></div>{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{thermalMoney(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{thermalMoney(order.cashback_used)}</b></div>}<div className="total"><span>Total</span><b>{thermalMoney(order.total)}</b></div></section>
+     </div>
+     <footer>
+       {!acknowledged&&<button className="acknowledge-detail" onClick={onAcknowledge}><Check size={17}/> Enterado</button>}
+       <button onClick={()=>printKitchenTicket(order)}><Printer size={17}/> Ticket cocina</button>
+       <button onClick={()=>printSaleTicket(order)}><Printer size={17}/> Ticket de venta</button>
+       <button className="advance-detail" onClick={onAdvance}>{order.status==='Listo'?<Check size={17}/>:<Flame size={17}/>} {order.status==='Listo'?'Entregar pedido':'Marcar como listo'}</button>
+     </footer>
+   </section>
+ </div>
 }
 
 function ScheduledOrdersModal({orders,now,onClose}){

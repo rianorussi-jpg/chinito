@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, X, ImagePlus } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 
 const itemSummary=(o)=>(o.order_items||[]).map(i=>`${i.quantity>1?`${i.quantity}× `:''}${i.name}`).join(' + ') || 'Sin productos'
 const pickupShort=(label='')=>label.replace('Hoy, ','').replace('Lo antes posible · ','ASAP · ')
-const money=(n)=>Number(n||0).toLocaleString('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0})
+const money=(n)=>Number(n||0).toLocaleString('es-MX',{style:'currency',currency:'MXN',minimumFractionDigits:2,maximumFractionDigits:2})
+const orderSubtotal=(o)=>Number(o?.total||0)+Number(o?.cashback_used||0)+Number(o?.first_order_discount||0)
+const paymentLabel=(o)=>o?.payment_method==='online'?'Pago en línea':'Pago al recoger'
 const localDateValue=(date=new Date())=>{
  const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,'0'),d=String(date.getDate()).padStart(2,'0')
  return `${y}-${m}-${d}`
@@ -123,20 +125,45 @@ function DateNavigator({value,onChange}){
 }
 
 function Dashboard({orders,active,settings,setSection,selectedDate}){
+ const [selected,setSelected]=useState(null)
  const validOrders=orders.filter(o=>o.status!=='Cancelado'&&(o.payment_method==='pickup'||o.payment_status==='paid'))
  const sales=validOrders.reduce((s,o)=>s+Number(o.total||0),0)
  const avg=validOrders.length?sales/validOrders.length:0
  const pending=validOrders.filter(o=>o.status!=='Entregado').length
  return <>
  <section className="stats"><Stat icon={ShoppingBag} label="Pedidos del día" value={validOrders.length} note={`${pending} activos`}/><Stat icon={BarChart3} label="Venta del día" value={money(sales)} note={`Ticket prom. ${money(avg)}`}/><Stat icon={Clock3} label="Pedidos pendientes" value={pending} note="Pickup"/><Stat icon={PackageOpen} label="Productos activos" value={active} note="Disponibles ahora"/></section>
- <div className="selected-day-caption"><CalendarDays size={15}/><span>{dateLabel(selectedDate)}</span></div><div className="two-col"><section className="card"><div className="card-head"><div><span className="eyebrow">HISTORIAL DEL DÍA</span><h2>Pedidos recientes</h2></div><button onClick={()=>setSection('Pedidos')}>Ver todos</button></div>{orders.slice(0,6).map(o=><OrderRow key={o.id} o={o}/>)}</section>
+ <div className="selected-day-caption"><CalendarDays size={15}/><span>{dateLabel(selectedDate)}</span></div><div className="two-col"><section className="card"><div className="card-head"><div><span className="eyebrow">HISTORIAL DEL DÍA</span><h2>Pedidos recientes</h2></div><button onClick={()=>setSection('Pedidos')}>Ver todos</button></div>{orders.slice(0,6).map(o=><OrderRow key={o.id} o={o} onClick={()=>setSelected(o)}/>)}</section>
  <section className="card accent"><span className="eyebrow">OPERACIÓN</span><h2>{settings?.store_open?'Todo listo para recibir pedidos':'Tienda marcada como cerrada'}</h2><p>Cliente, Panel y Kitchen Mode comparten la misma operación en Supabase.</p><div className="mini-status"><CheckCircle2/><div><b>{settings?.store_open?'Tienda abierta':'Tienda cerrada'}</b><span>{settings?.opening_time||'11:00 a.m.'} – {settings?.closing_time||'9:00 p.m.'}</span></div></div><div className="mini-status"><Flame/><div><b>Cocina conectable</b><span>Pedidos sincronizados por Realtime</span></div></div></section></div>
+ {selected&&<PanelOrderDetails order={selected} onClose={()=>setSelected(null)}/>}
  </>
 }
 function Stat({icon:I,label,value,note}){return <div className="stat"><i><I/></i><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}
-function OrderRow({o}){return <div className="order-row"><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>}
+function OrderRow({o,onClick}){return <div className={`order-row ${onClick?'clickable':''}`} onClick={onClick}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>}
 
-function Orders({orders,onAdvance,selectedDate}){return <section className="card"><div className="card-head"><div><span className="eyebrow">PICKUP</span><h2>Pedidos · {dateLabel(selectedDate)}</h2></div></div><div className="table-head"><span>Pedido</span><span>Contenido</span><span>Hora</span><span>Total</span><span>Estado</span></div>{orders.map(o=><div className="order-row clickable" key={o.id} onClick={()=>onAdvance(o)}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>)}{!orders.length&&<p className="hint">No hay pedidos registrados en este día.</p>}<p className="hint">Haz clic en un pedido para avanzar su estado.</p></section>}
+function Orders({orders,onAdvance,selectedDate}){
+ const [selected,setSelected]=useState(null)
+ useEffect(()=>{if(selected)setSelected(current=>orders.find(o=>o.id===current.id)||current)},[orders])
+ return <>
+  <section className="card"><div className="card-head"><div><span className="eyebrow">PICKUP</span><h2>Pedidos · {dateLabel(selectedDate)}</h2></div></div><div className="table-head"><span>Pedido</span><span>Contenido</span><span>Hora</span><span>Total</span><span>Estado</span></div>{orders.map(o=><div className="order-row clickable" key={o.id} onClick={()=>setSelected(o)}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>)}{!orders.length&&<p className="hint">No hay pedidos registrados en este día.</p>}<p className="hint">Haz clic en un pedido para ver todos sus detalles.</p></section>
+  {selected&&<PanelOrderDetails order={selected} onClose={()=>setSelected(null)} onAdvance={async()=>{await onAdvance(selected);setSelected(null)}}/>}
+ </>
+}
+
+function PanelOrderDetails({order,onClose,onAdvance}){
+ const subtotal=orderSubtotal(order)
+ const canAdvance=Boolean(onAdvance)&&!['Entregado','Cancelado'].includes(order.status)
+ return <div className="panel-order-detail-overlay" onMouseDown={onClose}>
+  <section className="panel-order-detail-modal" onMouseDown={e=>e.stopPropagation()}>
+   <header><div><span className="eyebrow">{order.order_number}</span><h2>{order.customer_name}</h2><p>{order.customer_phone||'Sin teléfono'} · {pickupShort(order.pickup_label)}</p></div><button onClick={onClose}><X size={20}/></button></header>
+   <div className="panel-order-detail-body">
+    <div className="panel-order-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)} · {order.payment_status==='paid'?'Pagado':'Pendiente'}</b></div><div><span>Fecha</span><b>{new Date(order.created_at).toLocaleString('es-MX')}</b></div></div>
+    <section><h3>Productos</h3><div className="panel-detail-items">{(order.order_items||[]).map((item,index)=><div className="panel-detail-item" key={item.id||index}><div><b>{item.quantity>1?`${item.quantity} × `:''}{item.name}</b>{item.base_name&&<span>Base: {item.base_name}</span>}{Array.isArray(item.guisados)&&item.guisados.length>0&&<span>Guisados: {item.guisados.join(' · ')}</span>}{item.variant&&<span>{item.variant}</span>}{Array.isArray(item.extras)&&item.extras.length>0&&<span>Extras: {item.extras.map(e=>`${Number(e.quantity||1)>1?`${e.quantity}× `:''}${e.name}`).join(', ')}</span>}</div><strong>{money(Number(item.unit_price||0)*Number(item.quantity||1))}</strong></div>)}</div></section>
+    <section className="panel-order-totals"><h3>Desglose</h3><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{money(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{money(order.cashback_used)}</b></div>}<div className="total"><span>Total</span><b>{money(order.total)}</b></div></section>
+   </div>
+   <footer><button onClick={onClose}>Cerrar</button>{canAdvance&&<button className="primary" onClick={onAdvance}>{order.status==='Listo'?'Marcar entregado':'Marcar listo'}</button>}</footer>
+  </section>
+ </div>
+}
 
 const DEFAULT_IMAGES={Base:'/img/product/arroz-frito.jpg',Guisado:'/img/product/orange-chicken.jpg',Bebida:'/img/product/refresco.jpg',Complemento:'/img/product/chinito-bites.jpg',Extra:'/img/product/arroz-frito.jpg'}
 const EDIT_CATEGORIES=['Base','Guisado','Bebida','Complemento','Extra']
