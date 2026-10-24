@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, X, ImagePlus } from 'lucide-react'
+import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, X, ImagePlus } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
@@ -23,6 +23,42 @@ const dateLabel=(value)=>{
  const [y,m,d]=String(value).split('-').map(Number)
  return new Intl.DateTimeFormat('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date(y,m-1,d))
 }
+
+const monthRangeFor=(value)=>{
+ const [y,m]=String(value).split('-').map(Number)
+ const first=new Date(y,m-1,1)
+ const last=new Date(y,m,0)
+ return {from:localDateValue(first),to:localDateValue(last)}
+}
+
+const csvCell=(value='')=>`"${String(value??'').replace(/"/g,'""')}"`
+const csvNumber=(value)=>Number(value||0).toFixed(2)
+const downloadCsv=(filename,rows)=>{
+ const csv='\uFEFF'+rows.map(row=>row.map(csvCell).join(',')).join('\r\n')
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'})
+ const url=URL.createObjectURL(blob)
+ const a=document.createElement('a')
+ a.href=url
+ a.download=filename
+ document.body.appendChild(a)
+ a.click()
+ a.remove()
+ setTimeout(()=>URL.revokeObjectURL(url),1000)
+}
+
+const exportableSale=(o)=>o.status!=='Cancelado'&&(o.payment_method==='pickup'||o.payment_status==='paid')
+const exportRangeOrders=async(from,to)=>{
+ if(!from||!to)throw new Error('Selecciona un periodo válido.')
+ if(from>to)throw new Error('La fecha inicial no puede ser posterior a la fecha final.')
+ const {start}=dateBounds(from)
+ const {end}=dateBounds(to)
+ const {data,error}=await supabase.from('orders').select(orderSelect).gte('created_at',start.toISOString()).lt('created_at',end.toISOString()).order('created_at',{ascending:true})
+ if(error)throw error
+ return (data||[]).filter(exportableSale)
+}
+
+const exportPeriodLabel=(from,to)=>from===to?dateLabel(from):`${dateLabel(from)} a ${dateLabel(to)}`
+const exportStamp=(from,to)=>from===to?from:`${from}_a_${to}`
 
 
 export default function App(){
@@ -142,9 +178,110 @@ function OrderRow({o,onClick}){return <div className={`order-row ${onClick?'clic
 
 function Orders({orders,onAdvance,selectedDate}){
  const [selected,setSelected]=useState(null)
+ const initialRange=useMemo(()=>monthRangeFor(selectedDate),[selectedDate])
+ const [rangeFrom,setRangeFrom]=useState(initialRange.from)
+ const [rangeTo,setRangeTo]=useState(initialRange.to)
+ const [exporting,setExporting]=useState('')
+ const [exportError,setExportError]=useState('')
+
  useEffect(()=>{if(selected)setSelected(current=>orders.find(o=>o.id===current.id)||current)},[orders])
+ useEffect(()=>{setRangeFrom(initialRange.from);setRangeTo(initialRange.to);setExportError('')},[initialRange.from,initialRange.to])
+
+ const loadExportData=async()=>{
+   setExportError('')
+   try{return await exportRangeOrders(rangeFrom,rangeTo)}
+   catch(error){setExportError(error?.message||'No se pudo preparar la descarga.');throw error}
+ }
+
+ const downloadKpi=async()=>{
+   setExporting('kpi')
+   try{
+     const sales=await loadExportData()
+     const gross=sales.reduce((sum,o)=>sum+orderSubtotal(o),0)
+     const firstOrderDiscount=sales.reduce((sum,o)=>sum+Number(o.first_order_discount||0),0)
+     const cashback=sales.reduce((sum,o)=>sum+Number(o.cashback_used||0),0)
+     const net=sales.reduce((sum,o)=>sum+Number(o.total||0),0)
+     const units=sales.reduce((sum,o)=>sum+(o.order_items||[]).reduce((acc,item)=>acc+Number(item.quantity||1),0),0)
+     const avg=sales.length?net/sales.length:0
+     const uniqueCustomers=new Set(sales.map(o=>String(o.customer_phone||o.customer_name||'').trim().toLowerCase()).filter(Boolean)).size
+     const online=sales.filter(o=>o.payment_method==='online')
+     const pickup=sales.filter(o=>o.payment_method==='pickup')
+     const statusCount=sales.reduce((acc,o)=>{acc[o.status]=(acc[o.status]||0)+1;return acc},{})
+     const products=new Map()
+     for(const order of sales){
+       for(const item of (order.order_items||[])){
+         const name=item.name||'Producto'
+         const qty=Number(item.quantity||1)
+         const revenue=Number(item.unit_price||0)*qty
+         const current=products.get(name)||{qty:0,revenue:0}
+         current.qty+=qty;current.revenue+=revenue;products.set(name,current)
+       }
+     }
+     const productRows=[...products.entries()].sort((a,b)=>b[1].qty-a[1].qty)
+     const rows=[
+       ['KPI','Valor'],
+       ['Periodo',exportPeriodLabel(rangeFrom,rangeTo)],
+       ['Pedidos vendidos',sales.length],
+       ['Venta bruta antes de descuentos',csvNumber(gross)],
+       ['Regalo primer pedido aplicado',csvNumber(firstOrderDiscount)],
+       ['Cashback aplicado',csvNumber(cashback)],
+       ['Venta neta',csvNumber(net)],
+       ['Ticket promedio',csvNumber(avg)],
+       ['Unidades vendidas',units],
+       ['Clientes únicos',uniqueCustomers],
+       ['Pedidos pago en línea',online.length],
+       ['Venta pago en línea',csvNumber(online.reduce((sum,o)=>sum+Number(o.total||0),0))],
+       ['Pedidos pago al recoger',pickup.length],
+       ['Venta pago al recoger',csvNumber(pickup.reduce((sum,o)=>sum+Number(o.total||0),0))],
+       ['Pedidos nuevos',statusCount.Nuevo||0],
+       ['Pedidos preparando',statusCount.Preparando||0],
+       ['Pedidos listos',statusCount.Listo||0],
+       ['Pedidos entregados',statusCount.Entregado||0],
+       [],
+       ['PRODUCTOS VENDIDOS','Unidades','Importe antes de descuentos'],
+       ...productRows.map(([name,data])=>[name,data.qty,csvNumber(data.revenue)])
+     ]
+     downloadCsv(`chinito-kpi-${exportStamp(rangeFrom,rangeTo)}.csv`,rows)
+   }catch{}finally{setExporting('')}
+ }
+
+ const downloadRecords=async()=>{
+   setExporting('records')
+   try{
+     const sales=await loadExportData()
+     const rows=[[
+       'Pedido','Fecha','Hora','Cliente','Teléfono','Pickup','Método de pago','Estado de pago','Estado del pedido','Subtotal','Regalo primer pedido','Cashback','Total','Unidades','Productos'
+     ]]
+     for(const o of sales){
+       const created=new Date(o.created_at)
+       const units=(o.order_items||[]).reduce((sum,item)=>sum+Number(item.quantity||1),0)
+       const products=(o.order_items||[]).map(item=>{
+         const details=[item.base_name?`Base: ${item.base_name}`:'',Array.isArray(item.guisados)&&item.guisados.length?`Guisados: ${item.guisados.join(' / ')}`:'',item.variant||'',Array.isArray(item.extras)&&item.extras.length?`Extras: ${item.extras.map(e=>`${Number(e.quantity||1)>1?`${e.quantity}x `:''}${e.name}`).join(' / ')}`:''].filter(Boolean).join(' | ')
+         return `${Number(item.quantity||1)}x ${item.name}${details?` (${details})`:''}`
+       }).join(' ; ')
+       rows.push([
+         o.order_number,
+         created.toLocaleDateString('es-MX'),
+         created.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+         o.customer_name||'',o.customer_phone||'',o.pickup_label||'',paymentLabel(o),o.payment_status==='paid'?'Pagado':'Pendiente',o.status,
+         csvNumber(orderSubtotal(o)),csvNumber(o.first_order_discount),csvNumber(o.cashback_used),csvNumber(o.total),units,products
+       ])
+     }
+     downloadCsv(`chinito-registros-${exportStamp(rangeFrom,rangeTo)}.csv`,rows)
+   }catch{}finally{setExporting('')}
+ }
+
  return <>
-  <section className="card"><div className="card-head"><div><span className="eyebrow">PICKUP</span><h2>Pedidos · {dateLabel(selectedDate)}</h2></div></div><div className="table-head"><span>Pedido</span><span>Contenido</span><span>Hora</span><span>Total</span><span>Estado</span></div>{orders.map(o=><div className="order-row clickable" key={o.id} onClick={()=>setSelected(o)}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>)}{!orders.length&&<p className="hint">No hay pedidos registrados en este día.</p>}<p className="hint">Haz clic en un pedido para ver todos sus detalles.</p></section>
+  <section className="card">
+   <div className="card-head orders-card-head"><div><span className="eyebrow">PICKUP</span><h2>Pedidos · {dateLabel(selectedDate)}</h2></div></div>
+   <div className="orders-export-tools">
+    <div className="export-range"><label><span>Desde</span><input type="date" value={rangeFrom} onChange={e=>setRangeFrom(e.target.value)}/></label><label><span>Hasta</span><input type="date" value={rangeTo} onChange={e=>setRangeTo(e.target.value)}/></label></div>
+    <div className="export-buttons"><button type="button" onClick={downloadKpi} disabled={Boolean(exporting)}><Download size={16}/>{exporting==='kpi'?'Preparando KPI…':'Descargar KPI'}</button><button type="button" className="primary" onClick={downloadRecords} disabled={Boolean(exporting)}><Download size={16}/>{exporting==='records'?'Preparando registros…':'Descargar registros completos'}</button></div>
+   </div>
+   <p className="export-hint">Las descargas incluyen las ventas válidas del periodo seleccionado y excluyen pedidos cancelados o pagos en línea no confirmados.</p>
+   {exportError&&<p className="export-error">{exportError}</p>}
+   <div className="table-head"><span>Pedido</span><span>Contenido</span><span>Hora</span><span>Total</span><span>Estado</span></div>{orders.map(o=><div className="order-row clickable" key={o.id} onClick={()=>setSelected(o)}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>)}{!orders.length&&<p className="hint">No hay pedidos registrados en este día.</p>}<p className="hint">Haz clic en un pedido para ver todos sus detalles.</p>
+  </section>
   {selected&&<PanelOrderDetails order={selected} onClose={()=>setSelected(null)} onAdvance={async()=>{await onAdvance(selected);setSelected(null)}}/>}
  </>
 }
