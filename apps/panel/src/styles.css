@@ -43,3 +43,12 @@
 .export-hint{font-size:10.5px;color:var(--muted);margin:0 0 14px;line-height:1.45}.export-error{font-size:11px;color:#b41018;background:#fff0f0;border:1px solid #f0c8ca;border-radius:10px;padding:9px 10px;margin:0 0 12px}
 @media(max-width:860px){.orders-export-tools{align-items:stretch;flex-direction:column}.export-buttons{justify-content:flex-start}}
 @media(max-width:560px){.export-range{display:grid;grid-template-columns:1fr 1fr}.export-range input{width:100%;min-width:0}.export-buttons{display:grid;grid-template-columns:1fr}.export-buttons button{width:100%}}
+
+
+/* Eliminar producto desde el editor de menú */
+.menu-editor-actions{justify-content:space-between;align-items:center;gap:10px}
+.menu-editor-actions-main{display:flex;justify-content:flex-end;gap:10px;margin-left:auto}
+.menu-delete-btn{background:#fff0f0!important;color:#c3161f!important;border:1px solid #f1c8ca!important;display:flex;align-items:center;justify-content:center;gap:7px;font-weight:800}
+.menu-delete-btn:hover{background:#ffe4e5!important}
+.menu-delete-btn:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:620px){.menu-editor-actions{align-items:stretch;flex-direction:column}.menu-editor-actions-main{width:100%;margin-left:0;display:grid;grid-template-columns:1fr 1fr}.menu-delete-btn{width:100%}}

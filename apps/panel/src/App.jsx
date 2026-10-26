@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, X, ImagePlus } from 'lucide-react'
+import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, Trash2, X, ImagePlus } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
@@ -348,6 +348,22 @@ function MenuEditor({item,menu,onClose,onSaved}){
    setError('');setFile(next)
    const reader=new FileReader();reader.onload=()=>setPreview(String(reader.result||''));reader.readAsDataURL(next)
  }
+ const remove=async()=>{
+   if(!item?.id||busy)return
+   const confirmed=window.confirm(`¿Eliminar "${item.name}" del menú?\n\nEsta acción no se puede deshacer.`)
+   if(!confirmed)return
+   setError('')
+   setBusy(true)
+   try{
+     const {error:deleteError}=await supabase.from('menu_items').delete().eq('id',item.id)
+     if(deleteError)throw deleteError
+     await onSaved()
+   }catch(err){
+     setError(err?.message||'No se pudo eliminar el producto.')
+   }finally{
+     setBusy(false)
+   }
+ }
  const save=async(event)=>{
    event.preventDefault();setError('')
    const name=draft.name.trim(),slug=item?.slug||slugify(name)
@@ -402,7 +418,10 @@ function MenuEditor({item,menu,onClose,onSaved}){
      <label className="menu-field-wide menu-volume-toggle"><input type="checkbox" checked={Boolean(draft.active)} onChange={e=>update('active',e.target.checked)}/><span>Producto disponible en la app</span></label>
      <div className="menu-field-wide menu-image-upload"><div className="menu-image-preview">{preview?<img src={preview} alt="Imagen del producto"/>:<ImagePlus size={32}/>}</div><div><b>Imagen del producto</b><p className="hint">Opcional. Si no subes otra, se conserva la imagen actual. JPG/PNG/WebP, máximo 5 MB.</p><input type="file" accept="image/jpeg,image/png,image/webp" onChange={onFile}/>{file&&<small>{file.name}</small>}</div></div>
      {error&&<p className="menu-editor-error menu-field-wide" role="alert">{error}</p>}
-     <div className="menu-field-wide menu-editor-actions"><button type="button" onClick={onClose} disabled={busy}>Cancelar</button><button type="submit" className="primary" disabled={busy}>{busy?'Guardando…':item?'Guardar cambios':'Agregar producto'}</button></div>
+     <div className="menu-field-wide menu-editor-actions">
+      {item&&<button type="button" className="menu-delete-btn" onClick={remove} disabled={busy}><Trash2 size={16}/> {busy?'Procesando…':'Eliminar producto'}</button>}
+      <div className="menu-editor-actions-main"><button type="button" onClick={onClose} disabled={busy}>Cancelar</button><button type="submit" className="primary" disabled={busy}>{busy?'Guardando…':item?'Guardar cambios':'Agregar producto'}</button></div>
+     </div>
     </form>
    </div>
  </div>
