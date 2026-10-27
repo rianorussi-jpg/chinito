@@ -143,6 +143,7 @@ const PICKUP_OPEN_MINUTES=13*60
 const PICKUP_CLOSE_MINUTES=20*60
 const formatPickupMinutes=(minutes)=>`${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`
 const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
+const isAsapPickup=(label='')=>/^Lo antes posible\b/i.test(displayPickupLabel(label).trim())
 const SERVICE_DAY_NAMES=['domingo','lunes','martes','miércoles','jueves','viernes','sábado']
 const SERVICE_DAY_LABELS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
 const getStoreScheduleState=(now=new Date())=>{
@@ -217,11 +218,12 @@ const screenFromHash=()=>{
 
 const CUSTOMER_ORDER_SELECT='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const ACTIVE_ORDER_STATUSES=['Nuevo','Preparando','Listo']
-const customerOrderState=(status)=>{
+const customerOrderState=(status,pickupLabel=ASAP_PICKUP_LABEL)=>{
   if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:1}
   if(status==='Entregado')return {label:'Entregado',eta:'Pedido completado.',step:2}
   if(status==='Cancelado')return {label:'Cancelado',eta:'Este pedido fue cancelado.',step:0}
-  return {label:'Preparando',eta:'Listo en 10–15 minutos',step:0}
+  const pickup=displayPickupLabel(pickupLabel||ASAP_PICKUP_LABEL)
+  return {label:'Preparando',eta:isAsapPickup(pickup)?'Listo en 10–15 minutos':`Recogida programada: ${pickup}`,step:0}
 }
 const orderIdOf=(order)=>order?.id||order?.order_id||null
 
@@ -1377,7 +1379,7 @@ function OrderItemsSummary({items=[]}){
 function OrderTracker({order,loading,onBack}){
   if(loading&&!order)return <main className="tracking-page"><div className="tracking-loading"><Clock3 size={28}/><b>Buscando tu pedido…</b></div></main>
   if(!order)return <main className="tracking-page"><button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button><div className="tracking-empty"><ShoppingBag size={38}/><h1>No tienes un pedido activo</h1><p>Cuando hagas un pedido podrás seguir su avance aquí.</p><button className="primary" onClick={onBack}>Ver menú</button></div></main>
-  const state=customerOrderState(order.status)
+  const state=customerOrderState(order.status,order.pickup_label)
   return <main className="tracking-page">
     <button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button>
     <section className={`tracking-hero ${order.status==='Listo'?'ready':''}`}><div className="tracking-live"><i/> PEDIDO EN VIVO</div><div className="tracking-hero-main"><div><span>{order.order_number}</span><h1>{state.label}</h1><p>{state.eta}</p></div><Clock3 size={42}/></div><OrderStatusSteps status={order.status}/></section>
@@ -1390,12 +1392,14 @@ function OrderTracker({order,loading,onBack}){
 }
 
 function Success({order,onReset}){
-  const state=customerOrderState(order?.status)
+  const pickupLabel=displayPickupLabel(order?.pickup_label||ASAP_PICKUP_LABEL)
+  const scheduledPickup=!isAsapPickup(pickupLabel)
+  const state=customerOrderState(order?.status,order?.pickup_label)
   return <main className="confirmed-page">
     <section className={`confirmed-hero ${order?.status==='Listo'?'ready':''}`}><div className="confirmed-check"><Check size={30}/></div><span className="confirmed-kicker">PEDIDO CONFIRMADO</span><h1>{state.label}</h1><p>{state.eta}</p><div className="confirmed-order-number"><span>Número de pedido</span><strong>{order?.order_number||'Confirmado'}</strong></div><OrderStatusSteps status={order?.status}/></section>
-    <section className="confirmed-info-strip"><div><small>Pickup</small><b>{displayPickupLabel(order?.pickup_label||ASAP_PICKUP_LABEL)}</b></div><div><small>Cliente</small><b>{formatPersonName(order?.customer_name||'')}</b></div><div><small>Total</small><strong>${Number(order?.total||0).toFixed(2)}</strong></div></section>
+    <section className="confirmed-info-strip"><div><small>Pickup</small><b>{pickupLabel}</b></div><div><small>Cliente</small><b>{formatPersonName(order?.customer_name||'')}</b></div><div><small>Total</small><strong>${Number(order?.total||0).toFixed(2)}</strong></div></section>
     <section className="confirmed-order-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Resumen del pedido</h2><p>Cocina ya recibió estos productos</p></div></div><OrderItemsSummary items={order?.order_items||[]}/></section>
-    <div className="confirmed-note"><Clock3 size={18}/><div><b>{order?.status==='Listo'?'Tu pedido ya está listo para recoger':'Tiempo estimado: 10–15 minutos'}</b><span>{order?.status==='Listo'?'Puedes pasar por tu pedido. Muéstranos tu número de orden al llegar.':'El estado se actualiza automáticamente. Cuando esté listo verás “Listo para recoger”.'}</span></div></div>
+    <div className="confirmed-note"><Clock3 size={18}/><div><b>{order?.status==='Listo'?'Tu pedido ya está listo para recoger':scheduledPickup?`Recogida programada: ${pickupLabel}`:'Tiempo estimado: 10–15 minutos'}</b><span>{order?.status==='Listo'?'Puedes pasar por tu pedido. Muéstranos tu número de orden al llegar.':scheduledPickup?'Tu pedido se preparará para que esté listo a la hora seleccionada. El estado se actualiza automáticamente.':'El estado se actualiza automáticamente. Cuando esté listo verás “Listo para recoger”.'}</span></div></div>
     <button className="primary confirmed-home-button" onClick={onReset}>Volver al inicio</button>
   </main>
 }
