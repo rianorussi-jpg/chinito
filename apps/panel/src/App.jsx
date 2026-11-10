@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, Trash2, X, ImagePlus } from 'lucide-react'
+import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Printer, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, Trash2, X, ImagePlus } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,cash_received,change_due,card_folio,paid_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 
 const itemSummary=(o)=>(o.order_items||[]).map(i=>`${i.quantity>1?`${i.quantity}× `:''}${i.name}`).join(' + ') || 'Sin productos'
 const pickupShort=(label='')=>label.replace('Hoy, ','').replace('Lo antes posible · ','ASAP · ')
 const money=(n)=>Number(n||0).toLocaleString('es-MX',{style:'currency',currency:'MXN',minimumFractionDigits:2,maximumFractionDigits:2})
-const orderSubtotal=(o)=>Number(o?.total||0)+Number(o?.cashback_used||0)+Number(o?.first_order_discount||0)
-const paymentLabel=(o)=>o?.payment_method==='online'?'Pago en línea':'Pago al recoger'
+const orderSubtotal=(o)=>Math.max(0,Number(o?.total||0)+Number(o?.cashback_used||0)+Number(o?.first_order_discount||0)-Number(o?.rain_delivery_fee||0))
+const paymentLabel=(o)=>{
+ const settled=String(o?.settlement_method||'').toLowerCase()
+ if(settled==='cash')return 'Pagado en efectivo'
+ if(settled==='card')return 'Pagado con tarjeta'
+ if(settled==='online')return 'Pagado en línea'
+ if(o?.payment_method==='online')return o?.payment_status==='paid'?'Pagado en línea':'Pago en línea'
+ return o?.payment_status==='paid'?'Pagado al recoger':'Pago al recoger'
+}
 const localDateValue=(date=new Date())=>{
  const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,'0'),d=String(date.getDate()).padStart(2,'0')
  return `${y}-${m}-${d}`
@@ -22,6 +29,59 @@ const dateBounds=(value)=>{
 const dateLabel=(value)=>{
  const [y,m,d]=String(value).split('-').map(Number)
  return new Intl.DateTimeFormat('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date(y,m-1,d))
+}
+
+const RECEIPT_COLS=36
+const thermalPlain=value=>String(value??'')
+ .normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/·/g,'-').replace(/…/g,'...').replace(/[^\x20-\x7E\n]/g,'')
+const escapeHtml=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[c]))
+const thermalWrap=(value,width=RECEIPT_COLS)=>{
+ const text=thermalPlain(value).replace(/\s+/g,' ').trim();if(!text)return []
+ const words=text.split(' '),lines=[];let line=''
+ for(const word of words){if(word.length>width){if(line){lines.push(line);line=''}for(let i=0;i<word.length;i+=width)lines.push(word.slice(i,i+width))}else if(!line)line=word;else if(line.length+1+word.length<=width)line+=` ${word}`;else{lines.push(line);line=word}}
+ if(line)lines.push(line);return lines
+}
+const thermalCenter=value=>{const text=thermalPlain(value).trim().slice(0,RECEIPT_COLS);return `${' '.repeat(Math.max(0,Math.floor((RECEIPT_COLS-text.length)/2)))}${text}`}
+const thermalRule=(char='-')=>char.repeat(RECEIPT_COLS)
+const thermalPair=(left,right)=>{const l=thermalPlain(left).trim(),r=thermalPlain(right).trim();if(!r)return thermalWrap(l);if(l.length+r.length+1<=RECEIPT_COLS)return [`${l}${' '.repeat(RECEIPT_COLS-l.length-r.length)}${r}`];return [...thermalWrap(l),...thermalWrap(r).map(x=>x.padStart(RECEIPT_COLS))]}
+const thermalMoney=value=>`$${Number(value||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}`
+const thermalDate=value=>new Date(value).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
+const thermalStyles=`
+ @page{margin:2mm 3mm 5mm}
+ html,body{margin:0!important;padding:0!important;background:#fff!important;color:#000!important}
+ body{font-family:"Courier New",Courier,monospace!important}
+ .receipt{box-sizing:border-box!important;width:70mm!important;max-width:70mm!important;margin:0!important;padding:0!important}
+ .ticket-line{display:block!important;box-sizing:border-box!important;width:100%!important;min-height:3.3mm!important;margin:0!important;padding:0!important;white-space:pre-wrap!important;word-break:normal!important;overflow-wrap:break-word!important;font-family:"Courier New",Courier,monospace!important;font-size:8.2pt!important;line-height:1.25!important;font-weight:600!important;color:#000!important;clear:both!important;break-inside:avoid!important}
+ .ticket-line.blank{height:3.3mm!important;min-height:3.3mm!important}
+ @media print{html,body{width:auto!important;max-width:none!important}.receipt{width:70mm!important;max-width:70mm!important}body{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}
+`
+const saleProductLines=(order)=>{
+ const lines=[]
+ for(const item of (order.order_items||[])){
+   const qty=Math.max(1,Number(item.quantity||1)),unit=Number(item.unit_price||0)
+   lines.push(...thermalPair(`${qty}x ${item.name||'Producto'}`,thermalMoney(unit*qty)))
+   if(item.base_name)lines.push(...thermalWrap(`  Base: ${item.base_name}`))
+   if(item.variant)lines.push(...thermalWrap(`  ${item.variant}`))
+   if(Array.isArray(item.guisados)&&item.guisados.length)lines.push(...thermalWrap(`  Guisados: ${item.guisados.join(', ')}`))
+   if(Array.isArray(item.extras)&&item.extras.length)lines.push(...thermalWrap(`  Extras: ${item.extras.map(extra=>`${Number(extra?.quantity||1)>1?`${extra.quantity}x `:''}${extra?.name||'Extra'}`).join(', ')}`))
+ }
+ return lines
+}
+const printSaleTicket=(order)=>{
+ const popup=window.open('','_blank','width=480,height=820')
+ if(!popup){window.alert('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes para Panel.');return}
+ const lines=[thermalCenter('CHI-NITO'),thermalCenter('TICKET DE VENTA'),thermalRule('='),...thermalWrap(`PEDIDO: ${order.order_number||''}`),...thermalWrap(`FECHA: ${thermalDate(order.paid_at||order.created_at)}`),...thermalWrap(`CLIENTE: ${order.customer_name||'Mostrador'}`)]
+ if(order.customer_phone)lines.push(...thermalWrap(`TEL: ${order.customer_phone}`))
+ lines.push(...thermalWrap(`PICKUP: ${order.pickup_label||'Lo antes posible'}`),...thermalWrap(`PAGO: ${paymentLabel(order).toUpperCase()} - ${order.payment_status==='paid'?'PAGADO':'PENDIENTE'}`),thermalRule('='),...saleProductLines(order),thermalRule('='),...thermalPair('SUBTOTAL',thermalMoney(orderSubtotal(order))))
+ if(Number(order.rain_delivery_fee||0)>0)lines.push(...thermalPair('ENVIO CON LLUVIA',`+${thermalMoney(order.rain_delivery_fee)}`))
+ if(Number(order.first_order_discount||0)>0)lines.push(...thermalPair('REGALO PRIMER PEDIDO',`-${thermalMoney(order.first_order_discount)}`))
+ if(Number(order.cashback_used||0)>0)lines.push(...thermalPair('CASHBACK',`-${thermalMoney(order.cashback_used)}`))
+ lines.push(...thermalPair('TOTAL',thermalMoney(order.total)))
+ if(order.settlement_method==='cash'){lines.push(...thermalPair('RECIBIDO',thermalMoney(order.cash_received)));lines.push(...thermalPair('CAMBIO',thermalMoney(order.change_due)))}
+ else if(order.settlement_method==='card'&&order.card_folio)lines.push(...thermalWrap(`FOLIO TARJETA: ${order.card_folio}`))
+ lines.push(thermalRule('='),'',thermalCenter('GRACIAS POR SU COMPRA'),thermalCenter('ESTE TICKET NO ES COMPROBANTE FISCAL'),'','','')
+ const htmlLines=lines.map(line=>line.length?`<div class="ticket-line">${escapeHtml(line)}</div>`:'<div class="ticket-line blank">&nbsp;</div>').join('')
+ popup.document.open();popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket de venta ${escapeHtml(order.order_number||'')}</title><style>${thermalStyles}</style></head><body><main class="receipt">${htmlLines}</main><script>window.onload=()=>setTimeout(()=>{window.print();window.onafterprint=()=>window.close()},350)<\/script></body></html>`);popup.document.close()
 }
 
 const monthRangeFor=(value)=>{
@@ -142,6 +202,7 @@ export default function App(){
 
  async function advanceOrder(order){
    if(order.payment_method==='online'&&order.payment_status!=='paid') return
+   if(order.status==='Listo'&&order.payment_method==='pickup'&&order.payment_status!=='paid'){window.alert('Este pedido debe cobrarse y entregarse desde Cocina para registrar efectivo/tarjeta, cambio o folio.');return}
    const next=(order.status==='Nuevo'||order.status==='Preparando')?'Listo':order.status==='Listo'?'Entregado':order.status
    if(next===order.status) return
    const {error}=await supabase.from('orders').update({status:next}).eq('id',order.id)
@@ -197,7 +258,8 @@ function Orders({orders,onAdvance,selectedDate}){
    setExporting('kpi')
    try{
      const sales=await loadExportData()
-     const gross=sales.reduce((sum,o)=>sum+orderSubtotal(o),0)
+     const gross=sales.reduce((sum,o)=>sum+orderSubtotal(o)+Number(o.rain_delivery_fee||0),0)
+     const rainFees=sales.reduce((sum,o)=>sum+Number(o.rain_delivery_fee||0),0)
      const firstOrderDiscount=sales.reduce((sum,o)=>sum+Number(o.first_order_discount||0),0)
      const cashback=sales.reduce((sum,o)=>sum+Number(o.cashback_used||0),0)
      const net=sales.reduce((sum,o)=>sum+Number(o.total||0),0)
@@ -205,7 +267,9 @@ function Orders({orders,onAdvance,selectedDate}){
      const avg=sales.length?net/sales.length:0
      const uniqueCustomers=new Set(sales.map(o=>String(o.customer_phone||o.customer_name||'').trim().toLowerCase()).filter(Boolean)).size
      const online=sales.filter(o=>o.payment_method==='online')
-     const pickup=sales.filter(o=>o.payment_method==='pickup')
+     const cash=sales.filter(o=>o.settlement_method==='cash')
+     const card=sales.filter(o=>o.settlement_method==='card')
+     const pickupPending=sales.filter(o=>o.payment_method==='pickup'&&!o.settlement_method)
      const statusCount=sales.reduce((acc,o)=>{acc[o.status]=(acc[o.status]||0)+1;return acc},{})
      const products=new Map()
      for(const order of sales){
@@ -223,6 +287,7 @@ function Orders({orders,onAdvance,selectedDate}){
        ['Periodo',exportPeriodLabel(rangeFrom,rangeTo)],
        ['Pedidos vendidos',sales.length],
        ['Venta bruta antes de descuentos',csvNumber(gross)],
+       ['Envíos con lluvia cobrados',csvNumber(rainFees)],
        ['Regalo primer pedido aplicado',csvNumber(firstOrderDiscount)],
        ['Cashback aplicado',csvNumber(cashback)],
        ['Venta neta',csvNumber(net)],
@@ -231,8 +296,11 @@ function Orders({orders,onAdvance,selectedDate}){
        ['Clientes únicos',uniqueCustomers],
        ['Pedidos pago en línea',online.length],
        ['Venta pago en línea',csvNumber(online.reduce((sum,o)=>sum+Number(o.total||0),0))],
-       ['Pedidos pago al recoger',pickup.length],
-       ['Venta pago al recoger',csvNumber(pickup.reduce((sum,o)=>sum+Number(o.total||0),0))],
+       ['Pedidos pagados en efectivo',cash.length],
+       ['Venta en efectivo',csvNumber(cash.reduce((sum,o)=>sum+Number(o.total||0),0))],
+       ['Pedidos pagados con tarjeta',card.length],
+       ['Venta con tarjeta',csvNumber(card.reduce((sum,o)=>sum+Number(o.total||0),0))],
+       ['Pedidos al recoger aún sin método registrado',pickupPending.length],
        ['Pedidos nuevos',statusCount.Nuevo||0],
        ['Pedidos preparando',statusCount.Preparando||0],
        ['Pedidos listos',statusCount.Listo||0],
@@ -250,7 +318,7 @@ function Orders({orders,onAdvance,selectedDate}){
    try{
      const sales=await loadExportData()
      const rows=[[
-       'Pedido','Fecha','Hora','Cliente','Teléfono','Pickup','Método de pago','Estado de pago','Estado del pedido','Subtotal','Regalo primer pedido','Cashback','Total','Unidades','Productos'
+       'Pedido','Fecha','Hora','Cliente','Teléfono','Pickup','Método de pago','Estado de pago','Estado del pedido','Subtotal','Envío con lluvia','Regalo primer pedido','Cashback','Total','Unidades','Productos'
      ]]
      for(const o of sales){
        const created=new Date(o.created_at)
@@ -264,7 +332,7 @@ function Orders({orders,onAdvance,selectedDate}){
          created.toLocaleDateString('es-MX'),
          created.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
          o.customer_name||'',o.customer_phone||'',o.pickup_label||'',paymentLabel(o),o.payment_status==='paid'?'Pagado':'Pendiente',o.status,
-         csvNumber(orderSubtotal(o)),csvNumber(o.first_order_discount),csvNumber(o.cashback_used),csvNumber(o.total),units,products
+         csvNumber(orderSubtotal(o)),csvNumber(o.rain_delivery_fee),csvNumber(o.first_order_discount),csvNumber(o.cashback_used),csvNumber(o.total),units,products
        ])
      }
      downloadCsv(`chinito-registros-${exportStamp(rangeFrom,rangeTo)}.csv`,rows)
@@ -293,11 +361,11 @@ function PanelOrderDetails({order,onClose,onAdvance}){
   <section className="panel-order-detail-modal" onMouseDown={e=>e.stopPropagation()}>
    <header><div><span className="eyebrow">{order.order_number}</span><h2>{order.customer_name}</h2><p>{order.customer_phone||'Sin teléfono'} · {pickupShort(order.pickup_label)}</p></div><button onClick={onClose}><X size={20}/></button></header>
    <div className="panel-order-detail-body">
-    <div className="panel-order-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)} · {order.payment_status==='paid'?'Pagado':'Pendiente'}</b></div><div><span>Fecha</span><b>{new Date(order.created_at).toLocaleString('es-MX')}</b></div></div>
+    <div className="panel-order-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)}</b></div><div><span>Fecha</span><b>{new Date(order.created_at).toLocaleString('es-MX')}</b></div></div>{order.payment_status==='paid'&&order.settlement_method&&<section className="panel-payment-record"><h3>Pago registrado</h3><div className="panel-payment-record-grid"><div><span>Método</span><b>{paymentLabel(order)}</b></div>{order.settlement_method==='cash'&&<><div><span>Recibido</span><b>{money(order.cash_received)}</b></div><div><span>Cambio</span><b>{money(order.change_due)}</b></div></>}{order.settlement_method==='card'&&<div><span>Folio tarjeta</span><b>{order.card_folio||'Sin folio'}</b></div>}</div></section>}
     <section><h3>Productos</h3><div className="panel-detail-items">{(order.order_items||[]).map((item,index)=><div className="panel-detail-item" key={item.id||index}><div><b>{item.quantity>1?`${item.quantity} × `:''}{item.name}</b>{item.base_name&&<span>Base: {item.base_name}</span>}{Array.isArray(item.guisados)&&item.guisados.length>0&&<span>Guisados: {item.guisados.join(' · ')}</span>}{item.variant&&<span>{item.variant}</span>}{Array.isArray(item.extras)&&item.extras.length>0&&<span>Extras: {item.extras.map(e=>`${Number(e.quantity||1)>1?`${e.quantity}× `:''}${e.name}`).join(', ')}</span>}</div><strong>{money(Number(item.unit_price||0)*Number(item.quantity||1))}</strong></div>)}</div></section>
-    <section className="panel-order-totals"><h3>Desglose</h3><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{money(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{money(order.cashback_used)}</b></div>}<div className="total"><span>Total</span><b>{money(order.total)}</b></div></section>
+    <section className="panel-order-totals"><h3>Desglose</h3><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{Number(order.rain_delivery_fee||0)>0&&<div><span>Envío con lluvia</span><b>+{money(order.rain_delivery_fee)}</b></div>}{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{money(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{money(order.cashback_used)}</b></div>}<div className="total"><span>Total</span><b>{money(order.total)}</b></div></section>
    </div>
-   <footer><button onClick={onClose}>Cerrar</button>{canAdvance&&<button className="primary" onClick={onAdvance}>{order.status==='Listo'?'Marcar entregado':'Marcar listo'}</button>}</footer>
+   <footer><button onClick={onClose}>Cerrar</button>{(order.payment_status==='paid'||order.status==='Entregado')&&<button className="ticket-reprint-button" onClick={()=>printSaleTicket(order)}><Printer size={16}/> Reimprimir ticket de venta</button>}{canAdvance&&<button className="primary" onClick={onAdvance}>{order.status==='Listo'&&order.payment_method==='pickup'&&order.payment_status!=='paid'?'Cobrar desde Cocina':order.status==='Listo'?'Marcar entregado':'Marcar listo'}</button>}</footer>
   </section>
  </div>
 }

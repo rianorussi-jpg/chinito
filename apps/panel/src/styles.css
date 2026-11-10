@@ -52,3 +52,14 @@
 .menu-delete-btn:hover{background:#ffe4e5!important}
 .menu-delete-btn:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:620px){.menu-editor-actions{align-items:stretch;flex-direction:column}.menu-editor-actions-main{width:100%;margin-left:0;display:grid;grid-template-columns:1fr 1fr}.menu-delete-btn{width:100%}}
+
+/* Registro de cobro y reimpresión */
+.panel-payment-record{background:#f8fffb!important;border-color:#cce9d8!important}
+.panel-payment-record h3{color:#137548}
+.panel-payment-record-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.panel-payment-record-grid>div{background:#fff;border:1px solid #d9ece1;border-radius:12px;padding:10px}
+.panel-payment-record-grid span,.panel-payment-record-grid b{display:block}
+.panel-payment-record-grid span{font-size:8.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.panel-payment-record-grid b{font-size:11px;margin-top:4px}
+.ticket-reprint-button{display:flex;align-items:center;justify-content:center;gap:7px!important;background:#171313!important;color:#fff!important}
+@media(max-width:620px){.panel-payment-record-grid{grid-template-columns:1fr}.panel-order-detail-modal>footer{flex-wrap:wrap}.panel-order-detail-modal>footer button{flex:1 1 150px}}

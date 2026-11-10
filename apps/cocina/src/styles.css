@@ -177,10 +177,26 @@
 
 .table-account-block .table-charge-button:disabled{opacity:.42;cursor:not-allowed;filter:grayscale(.25)}
 
-/* Acciones de cuenta · cobrar + pre-cobro */
-.table-account-actions{display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:8px;align-items:stretch}
-.table-account-actions .table-charge-button{margin:0}
-.table-prebill-button{border:1px solid #443b38;background:#fff;color:#171313;border-radius:12px;min-width:48px;padding:0;display:grid;place-items:center;cursor:pointer;transition:.15s ease}
-.table-prebill-button:hover{transform:translateY(-1px);background:#f7f1ed}
-.table-prebill-button:disabled{opacity:.42;cursor:not-allowed;filter:grayscale(.25);transform:none}
-@media(max-width:620px){.table-account-actions{grid-template-columns:minmax(0,1fr) 48px}}
+/* Cobros y flujo separado de mesas */
+.table-new-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.table-new-actions button{margin:0;min-height:44px;border-radius:12px;font-weight:900;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer}
+.table-print-kitchen{border:1px solid #d8ccc3;background:#fff;color:#171313}
+.table-print-kitchen:hover{background:#f7f1ec}
+.table-print-kitchen:disabled,.table-new-actions .table-add-submit:disabled{opacity:.42;cursor:not-allowed}
+.table-new-actions .table-add-submit{border:0;background:var(--red);color:#fff;padding:11px 10px}
+
+.rain-fee-toggle{grid-template-columns:22px minmax(0,1fr) auto!important;align-items:center!important;border:1px solid #e3d8d0;background:#fbf7f3;border-radius:13px;padding:11px 12px;cursor:pointer;transition:.15s ease}
+.rain-fee-toggle>svg{grid-row:auto!important;color:#8b7d75!important}
+.rain-fee-toggle>span{grid-column:auto!important;display:block!important}
+.rain-fee-toggle>span b,.rain-fee-toggle>span small{display:block}
+.rain-fee-toggle>span b{font-size:11px;color:#171313}
+.rain-fee-toggle>span small{font-size:9px;color:#7e726b;line-height:1.35;margin-top:2px}
+.rain-fee-toggle>input{grid-column:auto!important;width:20px!important;height:20px!important;margin:0;accent-color:var(--red);cursor:pointer}
+.rain-fee-toggle.active{background:#fff1f1;border-color:#efb4b7;box-shadow:0 0 0 2px rgba(239,22,31,.05)}
+.rain-fee-toggle.active>svg{color:var(--red)!important}
+
+@media(max-width:620px){
+  .table-new-actions{grid-template-columns:1fr 1fr}
+  .table-new-actions button{font-size:10px;padding:10px 7px}
+  .rain-fee-toggle{grid-template-columns:22px minmax(0,1fr) auto!important}
+}
