@@ -220,7 +220,7 @@ function printTableKitchenTicket(tableNumber,items,openedAt,popup){
   openThermalPrint({order_number:`Mesa ${tableNumber}`},lines,'Comanda mesa',{popup})
 }
 
-function printTablePreBill(tab,popup){
+function printTablePreBill(tab){
   const lines=[
     thermalCenter('CHI-NITO'),
     thermalCenter('CUENTA MESA'),
@@ -238,7 +238,7 @@ function printTablePreBill(tab,popup){
     thermalCenter('GRACIAS'),
     '', '', ''
   ]
-  openThermalPrint({order_number:`Mesa ${tab.table_number}`},lines,'Cuenta mesa',{popup})
+  openThermalPrint({order_number:`Mesa ${tab.table_number}`},lines,'Cuenta mesa')
 }
 
 function printTableSaleTicket(tab,popup){
