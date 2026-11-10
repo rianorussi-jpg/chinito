@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, Check, ChefHat, Clock3, CloudRain, CreditCard, Eye, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UtensilsCrossed, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const tableItemSelect='id,batch_id,item_type,catalog_slug,name,quantity,unit_price,base_name,guisados,extras,variant,created_at'
-const tableTabSelect=`id,table_number,status,total,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,updated_at,table_tab_items(${tableItemSelect})`
+const tableTabSelect=`id,table_number,status,total,tip_amount,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,updated_at,table_tab_items(${tableItemSelect})`
 const activeStatuses=['Nuevo','Preparando','Listo']
 const PICKUP_DAY_INDEX={domingo:0,lunes:1,martes:2,'miércoles':3,miercoles:3,jueves:4,viernes:5,'sábado':6,sabado:6}
 const isScheduledPickup=(label='')=>/^(?:(?:Mañana|Domingo|Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes|Sábado|Sabado)\s*·\s*)?\d{2}:\d{2}$/i.test(String(label||'').trim())
@@ -198,7 +198,9 @@ function printSaleTicket(order,popup=null){
   if(Number(order.rain_delivery_fee||0)>0)lines.push(...thermalPair('ENVIO CON LLUVIA',`+${thermalMoney(order.rain_delivery_fee)}`))
   if(Number(order.first_order_discount||0)>0)lines.push(...thermalPair('REGALO PRIMER PEDIDO',`-${thermalMoney(order.first_order_discount)}`))
   if(Number(order.cashback_used||0)>0)lines.push(...thermalPair('CASHBACK',`-${thermalMoney(order.cashback_used)}`))
-  lines.push(...thermalPair('TOTAL',thermalMoney(order.total)))
+  lines.push(...thermalPair('TOTAL CONSUMO',thermalMoney(order.total)))
+   if(Number(order.tip_amount||0)>0)lines.push(...thermalPair('PROPINA',`+${thermalMoney(order.tip_amount)}`))
+   lines.push(...thermalPair('TOTAL PAGADO',thermalMoney(Number(order.total||0)+Number(order.tip_amount||0))))
   if(order.settlement_method==='cash'){
     lines.push(...thermalPair('RECIBIDO',thermalMoney(order.cash_received)))
     lines.push(...thermalPair('CAMBIO',thermalMoney(order.change_due)))
@@ -314,8 +316,10 @@ function printTableSaleTicket(tab,popup){
     thermalRule('='),
     ...saleProductLines({order_items:tab.table_tab_items||[]}),
     thermalRule('='),
-    ...thermalPair('TOTAL',thermalMoney(tab.total))
+    ...thermalPair('TOTAL CONSUMO',thermalMoney(tab.total))
   ]
+  if(Number(tab.tip_amount||0)>0)lines.push(...thermalPair('PROPINA',`+${thermalMoney(tab.tip_amount)}`))
+  lines.push(...thermalPair('TOTAL PAGADO',thermalMoney(Number(tab.total||0)+Number(tab.tip_amount||0))))
   if(tab.payment_method==='cash'){
     lines.push(...thermalPair('RECIBIDO',thermalMoney(tab.cash_received)))
     lines.push(...thermalPair('CAMBIO',thermalMoney(tab.change_due)))
@@ -606,32 +610,49 @@ function TableStrip({tabsByNumber,error,onSelect}){
  </section>
 }
 
+function TipSelector({total,mode,setMode,custom,setCustom,tip}){
+ return <section className="tip-selector">
+  <div className="tip-selector-title"><div><b>Propina</b><small>Opcional · elige un porcentaje o captura otra cantidad</small></div><strong>{thermalMoney(tip)}</strong></div>
+  <div className="tip-selector-options">
+   {[0,10,15,20].map(percent=><button type="button" key={percent} className={mode===String(percent)?'selected':''} onClick={()=>setMode(String(percent))}>{percent===0?'Sin propina':`${percent}%`}</button>)}
+   <button type="button" className={mode==='custom'?'selected':''} onClick={()=>setMode('custom')}>Otra cantidad</button>
+  </div>
+  {mode==='custom'&&<label className="tip-custom-field"><span>Propina en pesos</span><div><b>$</b><input type="number" min="0" step="0.01" inputMode="decimal" value={custom} onChange={e=>setCustom(e.target.value)} placeholder="0.00"/></div></label>}
+ </section>
+}
+
 function TablePaymentModal({tab,onClose,onConfirmed}){
  const [method,setMethod]=useState('cash')
  const [cashReceived,setCashReceived]=useState('')
  const [folio,setFolio]=useState('')
+ const [tipMode,setTipMode]=useState('0')
+ const [customTip,setCustomTip]=useState('')
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const total=Number(tab?.total||0)
+ const tip=tipMode==='custom'?Math.round(Number(customTip||0)*100)/100:Math.round(total*Number(tipMode)/100*100)/100
+ const payable=total+tip
  const cash=Number(cashReceived||0)
- const change=Math.max(0,cash-total)
+ const change=Math.max(0,cash-payable)
 
  const submit=async()=>{
    setError('')
-   if(method==='cash'&&(!cashReceived||cash<total)){setError('El efectivo recibido debe ser igual o mayor al total.');return}
+   if(!Number.isFinite(tip)||tip<0||tip>100000){setError('Captura una propina válida.');return}
+   if(method==='cash'&&(!cashReceived||cash<payable)){setError('El efectivo recibido debe ser igual o mayor al total.');return}
    if(method==='card'&&!folio.trim()){setError('Captura el folio de la terminal.');return}
    const printWindow=reserveThermalPrint()
    setBusy(true)
-   const {data,error:rpcError}=await supabase.rpc('close_table_tab',{
+   const {data,error:rpcError}=await supabase.rpc('close_table_tab_with_tip',{
      p_table_number:Number(tab.table_number),
      p_payment_method:method,
      p_cash_received:method==='cash'?cash:null,
+     p_tip_amount:tip,
      p_card_folio:method==='card'?folio.trim():null,
    })
    setBusy(false)
    if(rpcError){if(printWindow)printWindow.close();setError(rpcError.message||'No se pudo cerrar la cuenta.');return}
    const result=Array.isArray(data)?data[0]:data
-   const receipt={...tab,status:'closed',payment_method:method,cash_received:method==='cash'?cash:null,change_due:method==='cash'?Number(result?.change_due??change):null,card_folio:method==='card'?folio.trim():null,closed_at:new Date().toISOString()}
+   const receipt={...tab,status:'closed',payment_method:method,tip_amount:tip,cash_received:method==='cash'?cash:null,change_due:method==='cash'?Number(result?.change_due??change):null,card_folio:method==='card'?folio.trim():null,closed_at:new Date().toISOString()}
    printTableSaleTicket(receipt,printWindow)
    onConfirmed()
  }
@@ -645,12 +666,14 @@ function TablePaymentModal({tab,onClose,onConfirmed}){
          <button className={method==='cash'?'active':''} onClick={()=>setMethod('cash')}><Banknote size={24}/><b>Efectivo</b><span>Captura cuánto recibes y calcula el cambio.</span></button>
          <button className={method==='card'?'active':''} onClick={()=>setMethod('card')}><CreditCard size={24}/><b>Tarjeta</b><span>Registra el folio de la terminal.</span></button>
        </div>
+       <TipSelector total={total} mode={tipMode} setMode={setTipMode} custom={customTip} setCustom={setCustomTip} tip={tip}/>
+       <div className="tip-payable-row"><span>Total con propina</span><b>{thermalMoney(payable)}</b></div>
        {method==='cash'?<>
-         <label className="payment-field payment-field-large"><span>¿Con cuánto paga?</span><div><b>$</b><input type="number" min={total} step="0.01" inputMode="decimal" value={cashReceived} onChange={e=>setCashReceived(e.target.value)} autoFocus placeholder={money(total)}/></div></label>
-         <div className={`payment-change-highlight ${cashReceived&&cash>=total?'ready':''}`}><span>CAMBIO A ENTREGAR</span><strong>{thermalMoney(cashReceived?change:0)}</strong><small>{!cashReceived?'Captura el efectivo recibido.':cash<total?`Faltan ${thermalMoney(total-cash)} para completar la cuenta.`:'Verifica el cambio antes de confirmar.'}</small></div>
+         <label className="payment-field payment-field-large"><span>¿Con cuánto paga?</span><div><b>$</b><input type="number" min={payable} step="0.01" inputMode="decimal" value={cashReceived} onChange={e=>setCashReceived(e.target.value)} autoFocus placeholder={money(payable)}/></div></label>
+         <div className={`payment-change-highlight ${cashReceived&&cash>=payable?'ready':''}`}><span>CAMBIO A ENTREGAR</span><strong>{thermalMoney(cashReceived?change:0)}</strong><small>{!cashReceived?'Captura el efectivo recibido.':cash<payable?`Faltan ${thermalMoney(payable-cash)} para completar la cuenta.`:'Verifica el cambio antes de confirmar.'}</small></div>
        </>:<label className="payment-field payment-field-large"><span>Folio de la terminal</span><input value={folio} onChange={e=>setFolio(e.target.value)} placeholder="Ej. 008421" autoFocus/><small>Este folio quedará guardado con el cierre de la mesa.</small></label>}
        {error&&<p className="manual-order-error">{error}</p>}
-       <button className="payment-confirm" disabled={busy} onClick={submit}>{busy?'Cobrando…':<>Confirmar cobro · {thermalMoney(total)} <Printer size={17}/></>}</button>
+       <button className="payment-confirm" disabled={busy} onClick={submit}>{busy?'Cobrando…':<>Confirmar cobro · {thermalMoney(payable)} <Printer size={17}/></>}</button>
      </div>
    </section>
  </div>
@@ -660,28 +683,34 @@ function OrderPaymentModal({order,onClose,onConfirmed}){
  const [method,setMethod]=useState('cash')
  const [cashReceived,setCashReceived]=useState('')
  const [folio,setFolio]=useState('')
+ const [tipMode,setTipMode]=useState('0')
+ const [customTip,setCustomTip]=useState('')
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const total=Number(order?.total||0)
+ const tip=tipMode==='custom'?Math.round(Number(customTip||0)*100)/100:Math.round(total*Number(tipMode)/100*100)/100
+ const payable=total+tip
  const cash=Number(cashReceived||0)
- const change=Math.max(0,cash-total)
+ const change=Math.max(0,cash-payable)
 
  const submit=async()=>{
    setError('')
-   if(method==='cash'&&(!cashReceived||cash<total)){setError('El efectivo recibido debe ser igual o mayor al total.');return}
+   if(!Number.isFinite(tip)||tip<0||tip>100000){setError('Captura una propina válida.');return}
+   if(method==='cash'&&(!cashReceived||cash<payable)){setError('El efectivo recibido debe ser igual o mayor al total.');return}
    if(method==='card'&&!folio.trim()){setError('Captura el folio de la terminal.');return}
    const printWindow=reserveThermalPrint()
    setBusy(true)
-   const {data,error:rpcError}=await supabase.rpc('complete_pickup_order',{
+   const {data,error:rpcError}=await supabase.rpc('complete_pickup_order_with_tip',{
      p_order_id:order.id,
      p_settlement_method:method,
      p_cash_received:method==='cash'?cash:null,
+     p_tip_amount:tip,
      p_card_folio:method==='card'?folio.trim():null,
    })
    setBusy(false)
    if(rpcError){if(printWindow)printWindow.close();setError(rpcError.message||'No se pudo confirmar el cobro.');return}
    const result=Array.isArray(data)?data[0]:data
-   const receipt={...order,status:'Entregado',payment_status:'paid',settlement_method:method,cash_received:method==='cash'?cash:null,change_due:method==='cash'?Number(result?.change_due??change):null,card_folio:method==='card'?folio.trim():null,paid_at:new Date().toISOString()}
+   const receipt={...order,status:'Entregado',payment_status:'paid',settlement_method:method,tip_amount:tip,cash_received:method==='cash'?cash:null,change_due:method==='cash'?Number(result?.change_due??change):null,card_folio:method==='card'?folio.trim():null,paid_at:new Date().toISOString()}
    printSaleTicket(receipt,printWindow)
    onConfirmed(receipt)
  }
@@ -695,12 +724,14 @@ function OrderPaymentModal({order,onClose,onConfirmed}){
          <button className={method==='cash'?'active':''} onClick={()=>setMethod('cash')}><Banknote size={24}/><b>Efectivo</b><span>Captura cuánto recibes y calcula el cambio.</span></button>
          <button className={method==='card'?'active':''} onClick={()=>setMethod('card')}><CreditCard size={24}/><b>Tarjeta</b><span>Registra el folio de la terminal.</span></button>
        </div>
+       <TipSelector total={total} mode={tipMode} setMode={setTipMode} custom={customTip} setCustom={setCustomTip} tip={tip}/>
+       <div className="tip-payable-row"><span>Total con propina</span><b>{thermalMoney(payable)}</b></div>
        {method==='cash'?<>
-         <label className="payment-field payment-field-large"><span>¿Con cuánto paga?</span><div><b>$</b><input type="number" min={total} step="0.01" inputMode="decimal" value={cashReceived} onChange={e=>setCashReceived(e.target.value)} autoFocus placeholder={money(total)}/></div></label>
-         <div className={`payment-change-highlight ${cashReceived&&cash>=total?'ready':''}`}><span>CAMBIO A ENTREGAR</span><strong>{thermalMoney(cashReceived?change:0)}</strong><small>{!cashReceived?'Captura el efectivo recibido.':cash<total?`Faltan ${thermalMoney(total-cash)} para completar el pedido.`:'Verifica el cambio antes de confirmar.'}</small></div>
+         <label className="payment-field payment-field-large"><span>¿Con cuánto paga?</span><div><b>$</b><input type="number" min={payable} step="0.01" inputMode="decimal" value={cashReceived} onChange={e=>setCashReceived(e.target.value)} autoFocus placeholder={money(payable)}/></div></label>
+         <div className={`payment-change-highlight ${cashReceived&&cash>=payable?'ready':''}`}><span>CAMBIO A ENTREGAR</span><strong>{thermalMoney(cashReceived?change:0)}</strong><small>{!cashReceived?'Captura el efectivo recibido.':cash<payable?`Faltan ${thermalMoney(payable-cash)} para completar el pedido.`:'Verifica el cambio antes de confirmar.'}</small></div>
        </>:<label className="payment-field payment-field-large"><span>Folio de la terminal</span><input value={folio} onChange={e=>setFolio(e.target.value)} placeholder="Ej. 008421" autoFocus/><small>El folio quedará guardado en el pedido y visible en Panel.</small></label>}
        {error&&<p className="manual-order-error">{error}</p>}
-       <button className="payment-confirm" disabled={busy} onClick={submit}>{busy?'Cobrando…':<>Confirmar cobro y entregar · {thermalMoney(total)} <Printer size={17}/></>}</button>
+       <button className="payment-confirm" disabled={busy} onClick={submit}>{busy?'Cobrando…':<>Confirmar cobro y entregar · {thermalMoney(payable)} <Printer size={17}/></>}</button>
      </div>
    </section>
  </div>
