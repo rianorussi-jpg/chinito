@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChefHat, Clock3, Eye, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UserRound, X } from 'lucide-react'
+import { Banknote, Check, ChefHat, Clock3, CreditCard, Eye, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UtensilsCrossed, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
 const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,kitchen_acknowledged_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const tableItemSelect='id,batch_id,item_type,catalog_slug,name,quantity,unit_price,base_name,guisados,extras,variant,created_at'
+const tableTabSelect=`id,table_number,status,total,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,updated_at,table_tab_items(${tableItemSelect})`
 const activeStatuses=['Nuevo','Preparando','Listo']
 const PICKUP_DAY_INDEX={domingo:0,lunes:1,martes:2,'miércoles':3,miercoles:3,jueves:4,viernes:5,'sábado':6,sabado:6}
 const isScheduledPickup=(label='')=>/^(?:(?:Mañana|Domingo|Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes|Sábado|Sabado)\s*·\s*)?\d{2}:\d{2}$/i.test(String(label||'').trim())
@@ -143,9 +145,13 @@ const thermalStyles=`
   }
 `
 
-function openThermalPrint(order,lines,title){
-  const popup=window.open('','_blank','width=480,height=820')
-  if(!popup){window.alert('Permite ventanas emergentes para imprimir el ticket.');return}
+function reserveThermalPrint(){
+  return window.open('','_blank','width=480,height=820')
+}
+
+function openThermalPrint(order,lines,title,options={}){
+  const popup=Object.prototype.hasOwnProperty.call(options,'popup')?options.popup:window.open('','_blank','width=480,height=820')
+  if(!popup){window.alert('La cuenta se guardó, pero el navegador bloqueó la ventana de impresión. Permite ventanas emergentes para Cocina.');return}
   const htmlLines=lines.map(line=>line.length?`<div class="ticket-line">${escapeHtml(line)}</div>`:'<div class="ticket-line blank">&nbsp;</div>').join('')
   popup.document.open()
   popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} ${escapeHtml(order.order_number||'')}</title><style>${thermalStyles}</style></head><body><main class="receipt">${htmlLines}</main><script>window.onload=()=>setTimeout(()=>{window.print();window.onafterprint=()=>window.close()},350)<\/script></body></html>`)
@@ -198,6 +204,47 @@ function printSaleTicket(order){
   openThermalPrint(order,lines,'Ticket de venta')
 }
 
+
+function printTableKitchenTicket(tableNumber,items,openedAt,popup){
+  const lines=[
+    thermalCenter('CHI-NITO'),
+    thermalCenter('COMANDA MESA'),
+    thermalRule('='),
+    ...thermalWrap(`MESA: ${tableNumber}`),
+    ...thermalWrap(`HORA: ${new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}`),
+    ...(openedAt?thermalWrap(`CUENTA ABIERTA: ${thermalDate(openedAt)}`):[]),
+    thermalRule('='),
+    ...kitchenProductLines({order_items:items}),
+    '', '', ''
+  ]
+  openThermalPrint({order_number:`Mesa ${tableNumber}`},lines,'Comanda mesa',{popup})
+}
+
+function printTableSaleTicket(tab,popup){
+  const method=tab.payment_method==='cash'?'Efectivo':'Tarjeta'
+  const lines=[
+    thermalCenter('CHI-NITO'),
+    thermalCenter('TICKET DE VENTA'),
+    thermalRule('='),
+    ...thermalWrap(`MESA: ${tab.table_number}`),
+    ...thermalWrap(`APERTURA: ${thermalDate(tab.opened_at)}`),
+    ...thermalWrap(`COBRO: ${thermalDate(tab.closed_at||new Date().toISOString())}`),
+    ...thermalWrap(`PAGO: ${method}`),
+    thermalRule('='),
+    ...saleProductLines({order_items:tab.table_tab_items||[]}),
+    thermalRule('='),
+    ...thermalPair('TOTAL',thermalMoney(tab.total))
+  ]
+  if(tab.payment_method==='cash'){
+    lines.push(...thermalPair('RECIBIDO',thermalMoney(tab.cash_received)))
+    lines.push(...thermalPair('CAMBIO',thermalMoney(tab.change_due)))
+  }else if(tab.card_folio){
+    lines.push(...thermalWrap(`FOLIO TARJETA: ${tab.card_folio}`))
+  }
+  lines.push(thermalRule('='),'',thermalCenter('GRACIAS POR SU COMPRA'),thermalCenter('ESTE TICKET NO ES COMPROBANTE FISCAL'),'','','')
+  openThermalPrint({order_number:`Mesa ${tab.table_number}`},lines,'Ticket de venta',{popup})
+}
+
 export default function App(){
  const [orders,setOrders]=useState([])
  const [menu,setMenu]=useState([])
@@ -207,6 +254,10 @@ export default function App(){
  const [loading,setLoading]=useState(false)
  const [newOrderOpen,setNewOrderOpen]=useState(false)
  const [scheduledOpen,setScheduledOpen]=useState(false)
+ const [tablesVisible,setTablesVisible]=useState(false)
+ const [tableTabs,setTableTabs]=useState([])
+ const [tablesError,setTablesError]=useState('')
+ const [selectedTable,setSelectedTable]=useState(null)
  const [detailOrder,setDetailOrder]=useState(null)
  const [clock,setClock]=useState(()=>Date.now())
  const [realtimeState,setRealtimeState]=useState(typeof navigator!=='undefined'&&!navigator.onLine?'offline':'connecting')
@@ -266,6 +317,21 @@ export default function App(){
    if(!error&&data)setMenu(data)
  },[session])
 
+
+ const loadTables=useCallback(async()=>{
+   if(!supabase || !session)return false
+   const {data,error}=await supabase.from('table_tabs').select(tableTabSelect).eq('status','open').order('table_number',{ascending:true})
+   if(error){
+     console.error('Kitchen tables load error',error)
+     setTablesError(error.message||'No se pudieron cargar las mesas.')
+     return false
+   }
+   const normalized=(data||[]).map(tab=>({...tab,table_tab_items:[...(tab.table_tab_items||[])].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))}))
+   setTableTabs(normalized)
+   setTablesError('')
+   return true
+ },[session])
+
  useEffect(()=>{
    const timer=window.setInterval(()=>setClock(Date.now()),1000)
    return ()=>window.clearInterval(timer)
@@ -304,6 +370,8 @@ export default function App(){
        .on('postgres_changes',{event:'*',schema:'public',table:'orders'},()=>loadOrders({silent:true}))
        .on('postgres_changes',{event:'*',schema:'public',table:'order_items'},()=>loadOrders({silent:true}))
        .on('postgres_changes',{event:'*',schema:'public',table:'menu_items'},()=>loadMenu())
+       .on('postgres_changes',{event:'*',schema:'public',table:'table_tabs'},()=>loadTables())
+       .on('postgres_changes',{event:'*',schema:'public',table:'table_tab_items'},()=>loadTables())
      channel=nextChannel
      nextChannel.subscribe(status=>{
        if(disposed||channel!==nextChannel)return
@@ -325,27 +393,29 @@ export default function App(){
      setRealtimeState('connecting')
      loadOrders({silent:true})
      loadMenu()
+     loadTables()
      connectRealtime()
    }
    const offline=()=>{if(!disposed)setRealtimeState('offline')}
    const refreshWhenVisible=()=>{
      if(disposed)return
-     if(document.visibilityState==='visible'&&(typeof navigator==='undefined'||navigator.onLine))loadOrders({silent:true})
+     if(document.visibilityState==='visible'&&(typeof navigator==='undefined'||navigator.onLine)){loadOrders({silent:true});loadTables()}
    }
    const refreshOnFocus=()=>{
      if(disposed)return
-     if(typeof navigator==='undefined'||navigator.onLine)loadOrders({silent:true})
+     if(typeof navigator==='undefined'||navigator.onLine){loadOrders({silent:true});loadTables()}
    }
 
    connectRealtime()
    loadOrders()
    loadMenu()
+   loadTables()
 
    const safetyPoll=window.setInterval(()=>{
      if(disposed)return
      const visible=document.visibilityState==='visible'
      const onlineNow=typeof navigator==='undefined'||navigator.onLine
-     if(visible&&onlineNow)loadOrders({silent:true})
+     if(visible&&onlineNow){loadOrders({silent:true});loadTables()}
    },10000)
 
    window.addEventListener('online',online)
@@ -368,12 +438,13 @@ export default function App(){
        supabase.removeChannel(oldChannel).catch(()=>{})
      }
    }
- },[session,loadOrders,loadMenu])
+ },[session,loadOrders,loadMenu,loadTables])
 
  const scheduled=useMemo(()=>orders.filter(o=>isWaitingScheduledOrder(o,clock)).sort((a,b)=>scheduledPickupAt(a)-scheduledPickupAt(b)),[orders,clock])
  const scheduledIds=useMemo(()=>new Set(scheduled.map(o=>o.id)),[scheduled])
  const preparing=useMemo(()=>orders.filter(o=>(o.status==='Nuevo'||o.status==='Preparando')&&!scheduledIds.has(o.id)),[orders,scheduledIds])
  const ready=useMemo(()=>orders.filter(o=>o.status==='Listo'),[orders])
+ const tableTabsByNumber=useMemo(()=>new Map(tableTabs.map(tab=>[Number(tab.table_number),tab])),[tableTabs])
 
  const acknowledge=async(order)=>{
    if(!order?.id||order.kitchen_acknowledged_at)return true
@@ -412,7 +483,9 @@ export default function App(){
  return <div className="kitchen">
   <header><div className="brand"><img src="/logo.jpg" alt="Chi-nito"/><div><span>KITCHEN MODE</span><b>CHI-NITO</b></div></div><div className="header-right"><div className="online" title={syncError||`Última sincronización: ${lastSyncAt?lastSyncAt.toLocaleTimeString('es-MX'):'pendiente'}`}><i style={{background:realtimeState==='live'?'#22c55e':realtimeState==='offline'?'#ef4444':'#f59e0b'}}/> {loading?'Actualizando…':realtimeState==='live'?'En tiempo real':realtimeState==='offline'?'Sin conexión':realtimeState==='degraded'?'Reconectando…':'Conectando…'}</div><div className="online"><Clock3 size={15}/> {new Date(clock).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div><button onClick={()=>loadOrders()} aria-label="Actualizar"><RotateCcw size={17}/></button><button onClick={()=>supabase.auth.signOut()} aria-label="Cerrar sesión"><LogOut size={17}/></button></div></header>
   <main>
-    <section className="k-head"><div><span className="eyebrow">PEDIDOS EN TIEMPO REAL</span><h1>Kitchen Mode</h1><p>Prepara, libera y entrega pedidos desde una sola vista.</p></div><div className="k-head-actions"><div className="counters"><Counter label="Preparando" n={preparing.length}/><Counter label="Listos" n={ready.length}/></div><button className="scheduled-orders-button" onClick={()=>setScheduledOpen(true)}><Clock3 size={18}/> Pedidos programados <b>{scheduled.length}</b></button><button className="new-order-button" onClick={()=>setNewOrderOpen(true)}><Plus size={19}/> Nuevo pedido</button></div></section>
+    <section className="k-head"><div><span className="eyebrow">PEDIDOS EN TIEMPO REAL</span><h1>Kitchen Mode</h1><p>Prepara, libera y entrega pedidos desde una sola vista.</p></div><div className="k-head-actions"><div className="counters"><Counter label="Preparando" n={preparing.length}/><Counter label="Listos" n={ready.length}/></div><button className="scheduled-orders-button" onClick={()=>setScheduledOpen(true)}><Clock3 size={18}/> Pedidos programados <b>{scheduled.length}</b></button><button className="new-order-button" onClick={()=>setNewOrderOpen(true)}><Plus size={19}/> Nuevo pedido rápido</button><button className={`tables-button ${tablesVisible?'active':''}`} onClick={()=>setTablesVisible(v=>!v)}><UtensilsCrossed size={18}/> Mesas <b>{tableTabs.length}</b></button></div></section>
+
+    {tablesVisible&&<TableStrip tabsByNumber={tableTabsByNumber} error={tablesError} onSelect={setSelectedTable}/>}
 
     <section className="k-board">
       <OrderLane title="Preparando" subtitle="Todos los pedidos activos en preparación" count={preparing.length} tone="prep">
@@ -426,6 +499,165 @@ export default function App(){
   {detailOrder&&<OrderDetailsModal order={detailOrder} onClose={()=>setDetailOrder(null)} onAcknowledge={()=>acknowledge(detailOrder)} onAdvance={()=>advance(detailOrder)}/>}
   {scheduledOpen&&<ScheduledOrdersModal orders={scheduled} now={clock} onClose={()=>setScheduledOpen(false)}/>}
   {newOrderOpen&&<NewOrderModal menu={menu} onClose={()=>setNewOrderOpen(false)} onCreated={()=>{setNewOrderOpen(false);loadOrders()}}/>}
+  {selectedTable&&<TableOrderModal tableNumber={selectedTable} tab={tableTabsByNumber.get(Number(selectedTable))||null} menu={menu} onClose={()=>setSelectedTable(null)} onUpdated={()=>loadTables()} onPaid={()=>{setSelectedTable(null);loadTables()}}/>}
+ </div>
+}
+
+
+function TableStrip({tabsByNumber,error,onSelect}){
+ return <section className="tables-strip-shell">
+   <div className="tables-strip-head"><div><span>MESAS</span><b>Cuentas abiertas</b></div><small>Desliza horizontalmente para ver las 15 mesas.</small></div>
+   {error&&<div className="tables-strip-error">{error}. Ejecuta la migración de mesas si todavía no la has instalado.</div>}
+   <div className="tables-strip-scroll">
+     {Array.from({length:15},(_,i)=>i+1).map(number=>{
+       const tab=tabsByNumber.get(number)
+       return <button key={number} className={`table-chip ${tab?'occupied':'available'}`} onClick={()=>onSelect(number)}>
+         <span>Mesa</span><strong>{number}</strong>{tab?<small>${money(tab.total)}</small>:<small>Disponible</small>}
+       </button>
+     })}
+   </div>
+ </section>
+}
+
+function TablePaymentModal({tab,onClose,onConfirmed}){
+ const [method,setMethod]=useState('cash')
+ const [cashReceived,setCashReceived]=useState('')
+ const [folio,setFolio]=useState('')
+ const [busy,setBusy]=useState(false)
+ const [error,setError]=useState('')
+ const total=Number(tab?.total||0)
+ const cash=Number(cashReceived||0)
+ const change=Math.max(0,cash-total)
+
+ const submit=async()=>{
+   setError('')
+   if(method==='cash'&&(!cashReceived||cash<total)){setError('El efectivo recibido debe ser igual o mayor al total.');return}
+   if(method==='card'&&!folio.trim()){setError('Captura el folio de la terminal.');return}
+   const printWindow=reserveThermalPrint()
+   setBusy(true)
+   const {data,error:rpcError}=await supabase.rpc('close_table_tab',{
+     p_table_number:Number(tab.table_number),
+     p_payment_method:method,
+     p_cash_received:method==='cash'?cash:null,
+     p_card_folio:method==='card'?folio.trim():null,
+   })
+   setBusy(false)
+   if(rpcError){if(printWindow)printWindow.close();setError(rpcError.message||'No se pudo cerrar la cuenta.');return}
+   const result=Array.isArray(data)?data[0]:data
+   const receipt={...tab,status:'closed',payment_method:method,cash_received:method==='cash'?cash:null,change_due:method==='cash'?Number(result?.change_due??change):null,card_folio:method==='card'?folio.trim():null,closed_at:new Date().toISOString()}
+   printTableSaleTicket(receipt,printWindow)
+   onConfirmed()
+ }
+
+ return <div className="table-payment-overlay" onMouseDown={e=>{e.stopPropagation();onClose()}}>
+   <section className="table-payment-modal" onMouseDown={e=>e.stopPropagation()}>
+     <header><div><span>COBRAR CUENTA</span><h2>Mesa {tab.table_number}</h2><p>Total a cobrar: {thermalMoney(total)}</p></div><button onClick={onClose}><X size={20}/></button></header>
+     <div className="table-payment-body">
+       <div className="payment-methods">
+         <button className={method==='cash'?'active':''} onClick={()=>setMethod('cash')}><Banknote size={22}/><b>Efectivo</b><span>Calcula el cambio</span></button>
+         <button className={method==='card'?'active':''} onClick={()=>setMethod('card')}><CreditCard size={22}/><b>Tarjeta</b><span>Guarda el folio</span></button>
+       </div>
+       {method==='cash'?<label className="payment-field"><span>¿Con cuánto paga?</span><div><b>$</b><input type="number" min={total} step="0.01" inputMode="decimal" value={cashReceived} onChange={e=>setCashReceived(e.target.value)} autoFocus/></div><small>Cambio: <strong>{thermalMoney(cashReceived?change:0)}</strong></small></label>:<label className="payment-field"><span>Folio de la terminal</span><input value={folio} onChange={e=>setFolio(e.target.value)} placeholder="Ej. 008421" autoFocus/><small>Se guardará junto con el cierre de la mesa.</small></label>}
+       {error&&<p className="manual-order-error">{error}</p>}
+       <button className="payment-confirm" disabled={busy} onClick={submit}>{busy?'Cobrando…':<>Confirmar cobro e imprimir <Printer size={17}/></>}</button>
+     </div>
+   </section>
+ </div>
+}
+
+function TableOrderModal({tableNumber,tab,menu,onClose,onUpdated,onPaid}){
+ const active=useMemo(()=>menu.filter(x=>x.active!==false),[menu])
+ const products=useMemo(()=>active.filter(x=>x.category==='Chi-nito'),[active])
+ const bases=useMemo(()=>active.filter(x=>x.category==='Base'),[active])
+ const guisados=useMemo(()=>active.filter(x=>x.category==='Guisado'),[active])
+ const extras=useMemo(()=>active.filter(x=>['Bebida','Complemento','Extra'].includes(x.category)),[active])
+ const complements=useMemo(()=>active.filter(x=>x.category==='Complemento'),[active])
+ const drinks=useMemo(()=>active.filter(x=>x.category==='Bebida'),[active])
+ const takeaway=useMemo(()=>guisados.filter(x=>x.metadata?.sell_by_volume!==false&&(Number(x.metadata?.half_price)>0||Number(x.metadata?.liter_price)>0)),[guisados])
+ const [product,setProduct]=useState(null)
+ const [base,setBase]=useState(null)
+ const [selectedGuisados,setSelectedGuisados]=useState([])
+ const [extraQty,setExtraQty]=useState({})
+ const [cart,setCart]=useState([])
+ const [busy,setBusy]=useState(false)
+ const [error,setError]=useState('')
+ const [paymentOpen,setPaymentOpen]=useState(false)
+ const existingItems=tab?.table_tab_items||[]
+
+ useEffect(()=>{if(!base&&bases.length)setBase(bases[0])},[bases,base])
+
+ const chooseProduct=(p)=>{setProduct(p);setBase(bases[0]||null);setSelectedGuisados([]);setExtraQty({})}
+ const toggleGuisado=(g)=>{
+   if(!product)return
+   const max=maxGuisadosFor(product)
+   setSelectedGuisados(prev=>prev.some(x=>x.slug===g.slug)?prev.filter(x=>x.slug!==g.slug):prev.length<max?[...prev,g]:prev)
+ }
+ const changeExtra=(item,delta)=>setExtraQty(prev=>{
+   const next=Math.max(0,Math.min(20,Number(prev[item.slug]||0)+delta))
+   const clone={...prev};if(next)clone[item.slug]=next;else delete clone[item.slug];return clone
+ })
+ const builderTotal=product?Number(product.price||0)+Number(base?.price||0)+selectedGuisados.reduce((sum,g)=>sum+Number(g.price||0),0)+Object.entries(extraQty).reduce((sum,[slug,qty])=>sum+(Number(extras.find(x=>x.slug===slug)?.price||0)*qty),0):0
+ const addConfigured=()=>{
+   setError('')
+   if(!product||!base||!selectedGuisados.length){setError('Selecciona Chi-nito, base y al menos un guisado.');return}
+   const chosenExtras=Object.entries(extraQty).map(([slug,quantity])=>({item:extras.find(x=>x.slug===slug),quantity})).filter(x=>x.item)
+   setCart(prev=>[...prev,{key:`cfg-${Date.now()}-${Math.random()}`,label:product.name,detail:`${base.name} · ${selectedGuisados.map(g=>g.name).join(', ')}${chosenExtras.length?` · Extras: ${chosenExtras.map(x=>`${x.quantity>1?`${x.quantity}× `:''}${x.item.name}`).join(', ')}`:''}`,unit:builderTotal,payload:{kind:'configured',catalog_slug:product.slug,quantity:1,base_slug:base.slug,guisado_slugs:selectedGuisados.map(g=>g.slug),extras:chosenExtras.map(x=>({catalog_slug:x.item.slug,quantity:x.quantity}))}}])
+   setSelectedGuisados([]);setExtraQty({})
+ }
+ const addSimple=(item,kind,variant=null,priceOverride=null)=>{
+   const unit=Number((priceOverride??item.price)||0)
+   setCart(prev=>[...prev,{key:`simple-${Date.now()}-${Math.random()}`,label:item.name,detail:variant||item.category,unit,payload:{kind,catalog_slug:item.slug,quantity:1,variant}}])
+ }
+ const changeCartQty=(key,delta)=>setCart(prev=>prev.flatMap(row=>{
+   if(row.key!==key)return [row]
+   const quantity=Math.max(0,Math.min(20,Number(row.payload.quantity||1)+delta))
+   return quantity?[{...row,payload:{...row.payload,quantity}}]:[]
+ }))
+ const total=cart.reduce((sum,row)=>sum+row.unit*Number(row.payload.quantity||1),0)
+
+ const submit=async()=>{
+   setError('')
+   if(!cart.length){setError('Agrega al menos un producto a la nueva comanda.');return}
+   const printWindow=reserveThermalPrint()
+   setBusy(true)
+   const {data,error:rpcError}=await supabase.rpc('add_table_items',{p_table_number:Number(tableNumber),p_items:cart.map(row=>row.payload)})
+   if(rpcError){setBusy(false);if(printWindow)printWindow.close();setError(rpcError.message||'No se pudo agregar la comanda a la mesa.');return}
+   const result=Array.isArray(data)?data[0]:data
+   const {data:newItems,error:itemsError}=await supabase.from('table_tab_items').select(tableItemSelect).eq('tab_id',result.tab_id).eq('batch_id',result.batch_id).order('created_at',{ascending:true})
+   setBusy(false)
+   if(itemsError){if(printWindow)printWindow.close();setError('La comanda se guardó, pero no pudimos recuperar sus productos para imprimir.');await onUpdated();setCart([]);return}
+   printTableKitchenTicket(tableNumber,newItems||[],tab?.opened_at||new Date().toISOString(),printWindow)
+   setCart([])
+   setProduct(null)
+   setSelectedGuisados([])
+   setExtraQty({})
+   await onUpdated()
+ }
+
+ return <div className="manual-order-overlay table-order-overlay" onMouseDown={onClose}>
+   <section className="manual-order-modal" onMouseDown={e=>e.stopPropagation()}>
+     <header className="manual-order-head"><div><span>CUENTA ABIERTA</span><h2>Mesa {tableNumber}</h2><p>Agrega productos cuando quieras. Cada envío imprime únicamente la comanda nueva.</p></div><button onClick={onClose} aria-label="Cerrar"><X size={22}/></button></header>
+     <div className="manual-order-body">
+       <div className="manual-order-builder">
+         <section className={`table-account-summary ${tab?'open':'empty'}`}>
+           <div className="table-account-title"><div><span>MESA {tableNumber}</span><h3>{tab?'Cuenta abierta':'Mesa disponible'}</h3><p>{tab?`Abierta ${new Date(tab.opened_at).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`:'La cuenta se abrirá al enviar la primera comanda.'}</p></div><div><small>Total actual</small><strong>${money(tab?.total||0)}</strong></div></div>
+           {existingItems.length>0&&<div className="table-existing-items">{existingItems.map(item=><KitchenItem key={item.id} item={item}/>)}</div>}
+           {tab&&Number(tab.total)>0&&<button className="table-charge-button" onClick={()=>setPaymentOpen(true)}><Banknote size={18}/> Cobrar cuenta · ${money(tab.total)}</button>}
+         </section>
+
+         <section className="manual-section"><div className="manual-section-title"><span>1</span><div><h3>Elige un Chi-nito</h3><p>Después selecciona base, guisados y extras.</p></div></div><div className="manual-product-grid">{products.map(p=><button key={p.slug} className={product?.slug===p.slug?'selected':''} onClick={()=>chooseProduct(p)}><img src={p.image||'/logo.jpg'} alt=""/><b>{p.name}</b><span>${money(p.price)}</span></button>)}</div></section>
+
+         {product&&<section className="manual-section configured"><div className="manual-config-head"><div><span>PERSONALIZANDO</span><h3>{product.name}</h3></div><strong>${money(builderTotal)}</strong></div><h4>Base</h4><div className="manual-choice-grid compact">{bases.map(b=><button key={b.slug} className={base?.slug===b.slug?'selected':''} onClick={()=>setBase(b)}><b>{b.name}</b>{Number(b.price)>0&&<span>+${money(b.price)}</span>}</button>)}</div><h4>Guisados <small>{selectedGuisados.length}/{maxGuisadosFor(product)}</small></h4><div className="manual-choice-grid">{guisados.map(g=><button key={g.slug} className={selectedGuisados.some(x=>x.slug===g.slug)?'selected':''} onClick={()=>toggleGuisado(g)}><b>{g.name}</b>{Number(g.price)>0&&<span>+${money(g.price)}</span>}</button>)}</div><h4>Extras</h4><div className="manual-extra-grid">{extras.map(item=>{const qty=Number(extraQty[item.slug]||0);return <div key={item.slug}><div><b>{item.name}</b><span>${money(item.price)}</span></div><div className="manual-qty"><button onClick={()=>changeExtra(item,-1)} disabled={!qty}><Minus size={13}/></button><strong>{qty}</strong><button onClick={()=>changeExtra(item,1)}><Plus size={13}/></button></div></div>})}</div><button className="manual-add-configured" onClick={addConfigured}><Plus size={17}/> Agregar {product.name} · ${money(builderTotal)}</button></section>}
+
+         <section className="manual-section"><div className="manual-section-title"><span>2</span><div><h3>Complementos y bebidas</h3><p>Agrégalos directamente a la nueva comanda.</p></div></div><div className="manual-simple-grid">{[...complements,...drinks].map(item=><button key={item.slug} onClick={()=>addSimple(item,item.category==='Bebida'?'drink':'addon')}><img src={item.image||'/logo.jpg'} alt=""/><div><b>{item.name}</b><span>${money(item.price)}</span></div><Plus size={16}/></button>)}</div></section>
+
+         {takeaway.length>0&&<section className="manual-section"><div className="manual-section-title"><span>3</span><div><h3>Guisados para llevar</h3><p>Agrega medio litro o un litro.</p></div></div><div className="manual-takeaway-grid">{takeaway.map(item=><div key={item.slug}><b>{item.name}</b><div>{Number(item.metadata?.half_price)>0&&<button onClick={()=>addSimple(item,'takeaway','1/2 litro',item.metadata.half_price)}>1/2 L · ${money(item.metadata.half_price)}</button>}{Number(item.metadata?.liter_price)>0&&<button onClick={()=>addSimple(item,'takeaway','1 litro',item.metadata.liter_price)}>1 L · ${money(item.metadata.liter_price)}</button>}</div></div>)}</div></section>}
+       </div>
+
+       <aside className="manual-cart table-new-command"><div className="manual-cart-head"><div><span>NUEVA COMANDA</span><h3>Mesa {tableNumber}</h3></div><b>{cart.reduce((sum,row)=>sum+Number(row.payload.quantity||1),0)}</b></div><div className="manual-cart-items">{cart.length===0?<div className="manual-cart-empty"><ShoppingBag size={30}/><p>Agrega solo lo nuevo que pidió la mesa.</p></div>:cart.map(row=><div className="manual-cart-row" key={row.key}><div><b>{row.label}</b><span>{row.detail}</span><strong>${money(row.unit*Number(row.payload.quantity||1))}</strong></div><div className="manual-cart-qty"><button onClick={()=>changeCartQty(row.key,-1)}><Minus size={13}/></button><b>{row.payload.quantity||1}</b><button onClick={()=>changeCartQty(row.key,1)}><Plus size={13}/></button></div></div>)}</div><div className="manual-cart-total"><span>Nueva comanda</span><strong>${money(total)}</strong></div>{error&&<p className="manual-order-error">{error}</p>}<button className="manual-submit table-add-submit" disabled={busy||!cart.length} onClick={submit}>{busy?'Guardando…':<>Agregar e imprimir comanda <Printer size={17}/></>}</button></aside>
+     </div>
+   </section>
+   {paymentOpen&&tab&&<TablePaymentModal tab={tab} onClose={()=>setPaymentOpen(false)} onConfirmed={()=>{setPaymentOpen(false);onPaid()}}/>}
  </div>
 }
 
