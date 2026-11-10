@@ -551,16 +551,62 @@ function TablePaymentModal({tab,onClose,onConfirmed}){
 
  return <div className="table-payment-overlay" onMouseDown={e=>{e.stopPropagation();onClose()}}>
    <section className="table-payment-modal" onMouseDown={e=>e.stopPropagation()}>
-     <header><div><span>COBRAR CUENTA</span><h2>Mesa {tab.table_number}</h2><p>Total a cobrar: {thermalMoney(total)}</p></div><button onClick={onClose}><X size={20}/></button></header>
+     <header><div><span>COBRAR CUENTA</span><h2>Mesa {tab.table_number}</h2><p>Confirma el total y selecciona cómo pagó el cliente.</p></div><button onClick={onClose}><X size={20}/></button></header>
      <div className="table-payment-body">
+       <div className="payment-total-card"><span>TOTAL A COBRAR</span><strong>{thermalMoney(total)}</strong><small>Cuenta completa · Mesa {tab.table_number}</small></div>
        <div className="payment-methods">
-         <button className={method==='cash'?'active':''} onClick={()=>setMethod('cash')}><Banknote size={22}/><b>Efectivo</b><span>Calcula el cambio</span></button>
-         <button className={method==='card'?'active':''} onClick={()=>setMethod('card')}><CreditCard size={22}/><b>Tarjeta</b><span>Guarda el folio</span></button>
+         <button className={method==='cash'?'active':''} onClick={()=>setMethod('cash')}><Banknote size={24}/><b>Efectivo</b><span>Captura cuánto recibes y calcula el cambio.</span></button>
+         <button className={method==='card'?'active':''} onClick={()=>setMethod('card')}><CreditCard size={24}/><b>Tarjeta</b><span>Registra el folio de la terminal.</span></button>
        </div>
-       {method==='cash'?<label className="payment-field"><span>¿Con cuánto paga?</span><div><b>$</b><input type="number" min={total} step="0.01" inputMode="decimal" value={cashReceived} onChange={e=>setCashReceived(e.target.value)} autoFocus/></div><small>Cambio: <strong>{thermalMoney(cashReceived?change:0)}</strong></small></label>:<label className="payment-field"><span>Folio de la terminal</span><input value={folio} onChange={e=>setFolio(e.target.value)} placeholder="Ej. 008421" autoFocus/><small>Se guardará junto con el cierre de la mesa.</small></label>}
+       {method==='cash'?<>
+         <label className="payment-field payment-field-large"><span>¿Con cuánto paga?</span><div><b>$</b><input type="number" min={total} step="0.01" inputMode="decimal" value={cashReceived} onChange={e=>setCashReceived(e.target.value)} autoFocus placeholder={money(total)}/></div></label>
+         <div className={`payment-change-highlight ${cashReceived&&cash>=total?'ready':''}`}><span>CAMBIO A ENTREGAR</span><strong>{thermalMoney(cashReceived?change:0)}</strong><small>{!cashReceived?'Captura el efectivo recibido.':cash<total?`Faltan ${thermalMoney(total-cash)} para completar la cuenta.`:'Verifica el cambio antes de confirmar.'}</small></div>
+       </>:<label className="payment-field payment-field-large"><span>Folio de la terminal</span><input value={folio} onChange={e=>setFolio(e.target.value)} placeholder="Ej. 008421" autoFocus/><small>Este folio quedará guardado con el cierre de la mesa.</small></label>}
        {error&&<p className="manual-order-error">{error}</p>}
-       <button className="payment-confirm" disabled={busy} onClick={submit}>{busy?'Cobrando…':<>Confirmar cobro e imprimir <Printer size={17}/></>}</button>
+       <button className="payment-confirm" disabled={busy} onClick={submit}>{busy?'Cobrando…':<>Confirmar cobro · {thermalMoney(total)} <Printer size={17}/></>}</button>
      </div>
+   </section>
+ </div>
+}
+
+function ProductConfiguratorModal({product,bases,guisados,extras,onClose,onAdd,contextLabel='pedido'}){
+ const [base,setBase]=useState(bases[0]||null)
+ const [selectedGuisados,setSelectedGuisados]=useState([])
+ const [extraQty,setExtraQty]=useState({})
+ const [error,setError]=useState('')
+ const max=maxGuisadosFor(product)
+ const toggleGuisado=(g)=>setSelectedGuisados(prev=>prev.some(x=>x.slug===g.slug)?prev.filter(x=>x.slug!==g.slug):prev.length<max?[...prev,g]:prev)
+ const changeExtra=(item,delta)=>setExtraQty(prev=>{
+   const next=Math.max(0,Math.min(20,Number(prev[item.slug]||0)+delta))
+   const clone={...prev};if(next)clone[item.slug]=next;else delete clone[item.slug];return clone
+ })
+ const total=Number(product?.price||0)+Number(base?.price||0)+selectedGuisados.reduce((sum,g)=>sum+Number(g.price||0),0)+Object.entries(extraQty).reduce((sum,[slug,qty])=>sum+(Number(extras.find(x=>x.slug===slug)?.price||0)*qty),0)
+ const add=()=>{
+   setError('')
+   if(!base||!selectedGuisados.length){setError(`Selecciona una base y ${max===1?'1 guisado':`hasta ${max} guisados`} para continuar.`);return}
+   const chosenExtras=Object.entries(extraQty).map(([slug,quantity])=>({item:extras.find(x=>x.slug===slug),quantity})).filter(x=>x.item)
+   onAdd({
+     key:`cfg-${Date.now()}-${Math.random()}`,
+     label:product.name,
+     detail:`${base.name} · ${selectedGuisados.map(g=>g.name).join(', ')}${chosenExtras.length?` · Extras: ${chosenExtras.map(x=>`${x.quantity>1?`${x.quantity}× `:''}${x.item.name}`).join(', ')}`:''}`,
+     unit:total,
+     payload:{kind:'configured',catalog_slug:product.slug,quantity:1,base_slug:base.slug,guisado_slugs:selectedGuisados.map(g=>g.slug),extras:chosenExtras.map(x=>({catalog_slug:x.item.slug,quantity:x.quantity}))},
+   })
+   onClose()
+ }
+ return <div className="product-config-overlay" onMouseDown={e=>{e.stopPropagation();onClose()}}>
+   <section className="product-config-modal" onMouseDown={e=>e.stopPropagation()}>
+     <header className="product-config-head">
+       <div className="product-config-product"><img src={product.image||'/logo.jpg'} alt=""/><div><span>PERSONALIZAR</span><h2>{product.name}</h2><p>Configura este producto antes de agregarlo al {contextLabel}.</p></div></div>
+       <button onClick={onClose} aria-label="Cerrar"><X size={21}/></button>
+     </header>
+     <div className="product-config-content">
+       <section className="product-config-section"><div className="product-config-section-title"><span>1</span><div><h3>Elige la base</h3><p>Selecciona una opción.</p></div></div><div className="manual-choice-grid compact">{bases.map(b=><button key={b.slug} className={base?.slug===b.slug?'selected':''} onClick={()=>setBase(b)}><b>{b.name}</b>{Number(b.price)>0&&<span>+${money(b.price)}</span>}</button>)}</div></section>
+       <section className="product-config-section"><div className="product-config-section-title"><span>2</span><div><h3>Elige los guisados</h3><p>{selectedGuisados.length} de {max} seleccionados</p></div></div><div className="manual-choice-grid">{guisados.map(g=><button key={g.slug} className={selectedGuisados.some(x=>x.slug===g.slug)?'selected':''} onClick={()=>toggleGuisado(g)}><b>{g.name}</b>{Number(g.price)>0&&<span>+${money(g.price)}</span>}</button>)}</div></section>
+       <section className="product-config-section"><div className="product-config-section-title"><span>3</span><div><h3>Extras</h3><p>Opcional. Agrega los que necesites.</p></div></div><div className="manual-extra-grid">{extras.map(item=>{const qty=Number(extraQty[item.slug]||0);return <div key={item.slug}><div><b>{item.name}</b><span>${money(item.price)}</span></div><div className="manual-qty"><button onClick={()=>changeExtra(item,-1)} disabled={!qty}><Minus size={13}/></button><strong>{qty}</strong><button onClick={()=>changeExtra(item,1)}><Plus size={13}/></button></div></div>})}</div></section>
+       {error&&<p className="manual-order-error product-config-error">{error}</p>}
+     </div>
+     <footer className="product-config-footer"><div><span>TOTAL DE {product.name.toUpperCase()}</span><strong>${money(total)}</strong></div><button onClick={add}><Plus size={18}/> Agregar al {contextLabel}</button></footer>
    </section>
  </div>
 }
@@ -574,36 +620,14 @@ function TableOrderModal({tableNumber,tab,menu,onClose,onUpdated,onPaid}){
  const complements=useMemo(()=>active.filter(x=>x.category==='Complemento'),[active])
  const drinks=useMemo(()=>active.filter(x=>x.category==='Bebida'),[active])
  const takeaway=useMemo(()=>guisados.filter(x=>x.metadata?.sell_by_volume!==false&&(Number(x.metadata?.half_price)>0||Number(x.metadata?.liter_price)>0)),[guisados])
- const [product,setProduct]=useState(null)
- const [base,setBase]=useState(null)
- const [selectedGuisados,setSelectedGuisados]=useState([])
- const [extraQty,setExtraQty]=useState({})
+ const [configProduct,setConfigProduct]=useState(null)
  const [cart,setCart]=useState([])
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const [paymentOpen,setPaymentOpen]=useState(false)
  const existingItems=tab?.table_tab_items||[]
+ const currentTotal=Number(tab?.total||0)
 
- useEffect(()=>{if(!base&&bases.length)setBase(bases[0])},[bases,base])
-
- const chooseProduct=(p)=>{setProduct(p);setBase(bases[0]||null);setSelectedGuisados([]);setExtraQty({})}
- const toggleGuisado=(g)=>{
-   if(!product)return
-   const max=maxGuisadosFor(product)
-   setSelectedGuisados(prev=>prev.some(x=>x.slug===g.slug)?prev.filter(x=>x.slug!==g.slug):prev.length<max?[...prev,g]:prev)
- }
- const changeExtra=(item,delta)=>setExtraQty(prev=>{
-   const next=Math.max(0,Math.min(20,Number(prev[item.slug]||0)+delta))
-   const clone={...prev};if(next)clone[item.slug]=next;else delete clone[item.slug];return clone
- })
- const builderTotal=product?Number(product.price||0)+Number(base?.price||0)+selectedGuisados.reduce((sum,g)=>sum+Number(g.price||0),0)+Object.entries(extraQty).reduce((sum,[slug,qty])=>sum+(Number(extras.find(x=>x.slug===slug)?.price||0)*qty),0):0
- const addConfigured=()=>{
-   setError('')
-   if(!product||!base||!selectedGuisados.length){setError('Selecciona Chi-nito, base y al menos un guisado.');return}
-   const chosenExtras=Object.entries(extraQty).map(([slug,quantity])=>({item:extras.find(x=>x.slug===slug),quantity})).filter(x=>x.item)
-   setCart(prev=>[...prev,{key:`cfg-${Date.now()}-${Math.random()}`,label:product.name,detail:`${base.name} · ${selectedGuisados.map(g=>g.name).join(', ')}${chosenExtras.length?` · Extras: ${chosenExtras.map(x=>`${x.quantity>1?`${x.quantity}× `:''}${x.item.name}`).join(', ')}`:''}`,unit:builderTotal,payload:{kind:'configured',catalog_slug:product.slug,quantity:1,base_slug:base.slug,guisado_slugs:selectedGuisados.map(g=>g.slug),extras:chosenExtras.map(x=>({catalog_slug:x.item.slug,quantity:x.quantity}))}}])
-   setSelectedGuisados([]);setExtraQty({})
- }
  const addSimple=(item,kind,variant=null,priceOverride=null)=>{
    const unit=Number((priceOverride??item.price)||0)
    setCart(prev=>[...prev,{key:`simple-${Date.now()}-${Math.random()}`,label:item.name,detail:variant||item.category,unit,payload:{kind,catalog_slug:item.slug,quantity:1,variant}}])
@@ -614,6 +638,7 @@ function TableOrderModal({tableNumber,tab,menu,onClose,onUpdated,onPaid}){
    return quantity?[{...row,payload:{...row.payload,quantity}}]:[]
  }))
  const total=cart.reduce((sum,row)=>sum+row.unit*Number(row.payload.quantity||1),0)
+ const newCount=cart.reduce((sum,row)=>sum+Number(row.payload.quantity||1),0)
 
  const submit=async()=>{
    setError('')
@@ -628,35 +653,38 @@ function TableOrderModal({tableNumber,tab,menu,onClose,onUpdated,onPaid}){
    if(itemsError){if(printWindow)printWindow.close();setError('La comanda se guardó, pero no pudimos recuperar sus productos para imprimir.');await onUpdated();setCart([]);return}
    printTableKitchenTicket(tableNumber,newItems||[],tab?.opened_at||new Date().toISOString(),printWindow)
    setCart([])
-   setProduct(null)
-   setSelectedGuisados([])
-   setExtraQty({})
+   setConfigProduct(null)
    await onUpdated()
  }
 
  return <div className="manual-order-overlay table-order-overlay" onMouseDown={onClose}>
-   <section className="manual-order-modal" onMouseDown={e=>e.stopPropagation()}>
-     <header className="manual-order-head"><div><span>CUENTA ABIERTA</span><h2>Mesa {tableNumber}</h2><p>Agrega productos cuando quieras. Cada envío imprime únicamente la comanda nueva.</p></div><button onClick={onClose} aria-label="Cerrar"><X size={22}/></button></header>
-     <div className="manual-order-body">
-       <div className="manual-order-builder">
-         <section className={`table-account-summary ${tab?'open':'empty'}`}>
-           <div className="table-account-title"><div><span>MESA {tableNumber}</span><h3>{tab?'Cuenta abierta':'Mesa disponible'}</h3><p>{tab?`Abierta ${new Date(tab.opened_at).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`:'La cuenta se abrirá al enviar la primera comanda.'}</p></div><div><small>Total actual</small><strong>${money(tab?.total||0)}</strong></div></div>
-           {existingItems.length>0&&<div className="table-existing-items">{existingItems.map(item=><KitchenItem key={item.id} item={item}/>)}</div>}
-           {tab&&Number(tab.total)>0&&<button className="table-charge-button" onClick={()=>setPaymentOpen(true)}><Banknote size={18}/> Cobrar cuenta · ${money(tab.total)}</button>}
-         </section>
-
-         <section className="manual-section"><div className="manual-section-title"><span>1</span><div><h3>Elige un Chi-nito</h3><p>Después selecciona base, guisados y extras.</p></div></div><div className="manual-product-grid">{products.map(p=><button key={p.slug} className={product?.slug===p.slug?'selected':''} onClick={()=>chooseProduct(p)}><img src={p.image||'/logo.jpg'} alt=""/><b>{p.name}</b><span>${money(p.price)}</span></button>)}</div></section>
-
-         {product&&<section className="manual-section configured"><div className="manual-config-head"><div><span>PERSONALIZANDO</span><h3>{product.name}</h3></div><strong>${money(builderTotal)}</strong></div><h4>Base</h4><div className="manual-choice-grid compact">{bases.map(b=><button key={b.slug} className={base?.slug===b.slug?'selected':''} onClick={()=>setBase(b)}><b>{b.name}</b>{Number(b.price)>0&&<span>+${money(b.price)}</span>}</button>)}</div><h4>Guisados <small>{selectedGuisados.length}/{maxGuisadosFor(product)}</small></h4><div className="manual-choice-grid">{guisados.map(g=><button key={g.slug} className={selectedGuisados.some(x=>x.slug===g.slug)?'selected':''} onClick={()=>toggleGuisado(g)}><b>{g.name}</b>{Number(g.price)>0&&<span>+${money(g.price)}</span>}</button>)}</div><h4>Extras</h4><div className="manual-extra-grid">{extras.map(item=>{const qty=Number(extraQty[item.slug]||0);return <div key={item.slug}><div><b>{item.name}</b><span>${money(item.price)}</span></div><div className="manual-qty"><button onClick={()=>changeExtra(item,-1)} disabled={!qty}><Minus size={13}/></button><strong>{qty}</strong><button onClick={()=>changeExtra(item,1)}><Plus size={13}/></button></div></div>})}</div><button className="manual-add-configured" onClick={addConfigured}><Plus size={17}/> Agregar {product.name} · ${money(builderTotal)}</button></section>}
-
-         <section className="manual-section"><div className="manual-section-title"><span>2</span><div><h3>Complementos y bebidas</h3><p>Agrégalos directamente a la nueva comanda.</p></div></div><div className="manual-simple-grid">{[...complements,...drinks].map(item=><button key={item.slug} onClick={()=>addSimple(item,item.category==='Bebida'?'drink':'addon')}><img src={item.image||'/logo.jpg'} alt=""/><div><b>{item.name}</b><span>${money(item.price)}</span></div><Plus size={16}/></button>)}</div></section>
-
+   <section className="manual-order-modal table-order-modal" onMouseDown={e=>e.stopPropagation()}>
+     <header className="manual-order-head"><div><span>{tab?'CUENTA ABIERTA':'MESA DISPONIBLE'}</span><h2>Mesa {tableNumber}</h2><p>{tab?'Agrega nuevos productos; lo ya comandado permanece separado en la cuenta.':'La cuenta se abrirá al imprimir la primera comanda.'}</p></div><button onClick={onClose} aria-label="Cerrar"><X size={22}/></button></header>
+     <div className="manual-order-body table-order-body">
+       <div className="manual-order-builder table-menu-builder">
+         <section className="manual-section table-menu-intro"><div className="manual-section-title"><span>1</span><div><h3>Elige un Chi-nito</h3><p>Toca un producto para abrir su ventana de personalización.</p></div></div><div className="manual-product-grid">{products.map(p=><button key={p.slug} onClick={()=>setConfigProduct(p)}><img src={p.image||'/logo.jpg'} alt=""/><b>{p.name}</b><span>${money(p.price)}</span></button>)}</div></section>
+         <section className="manual-section"><div className="manual-section-title"><span>2</span><div><h3>Complementos y bebidas</h3><p>Se agregan directamente a la nueva comanda.</p></div></div><div className="manual-simple-grid">{[...complements,...drinks].map(item=><button key={item.slug} onClick={()=>addSimple(item,item.category==='Bebida'?'drink':'addon')}><img src={item.image||'/logo.jpg'} alt=""/><div><b>{item.name}</b><span>${money(item.price)}</span></div><Plus size={16}/></button>)}</div></section>
          {takeaway.length>0&&<section className="manual-section"><div className="manual-section-title"><span>3</span><div><h3>Guisados para llevar</h3><p>Agrega medio litro o un litro.</p></div></div><div className="manual-takeaway-grid">{takeaway.map(item=><div key={item.slug}><b>{item.name}</b><div>{Number(item.metadata?.half_price)>0&&<button onClick={()=>addSimple(item,'takeaway','1/2 litro',item.metadata.half_price)}>1/2 L · ${money(item.metadata.half_price)}</button>}{Number(item.metadata?.liter_price)>0&&<button onClick={()=>addSimple(item,'takeaway','1 litro',item.metadata.liter_price)}>1 L · ${money(item.metadata.liter_price)}</button>}</div></div>)}</div></section>}
        </div>
 
-       <aside className="manual-cart table-new-command"><div className="manual-cart-head"><div><span>NUEVA COMANDA</span><h3>Mesa {tableNumber}</h3></div><b>{cart.reduce((sum,row)=>sum+Number(row.payload.quantity||1),0)}</b></div><div className="manual-cart-items">{cart.length===0?<div className="manual-cart-empty"><ShoppingBag size={30}/><p>Agrega solo lo nuevo que pidió la mesa.</p></div>:cart.map(row=><div className="manual-cart-row" key={row.key}><div><b>{row.label}</b><span>{row.detail}</span><strong>${money(row.unit*Number(row.payload.quantity||1))}</strong></div><div className="manual-cart-qty"><button onClick={()=>changeCartQty(row.key,-1)}><Minus size={13}/></button><b>{row.payload.quantity||1}</b><button onClick={()=>changeCartQty(row.key,1)}><Plus size={13}/></button></div></div>)}</div><div className="manual-cart-total"><span>Nueva comanda</span><strong>${money(total)}</strong></div>{error&&<p className="manual-order-error">{error}</p>}<button className="manual-submit table-add-submit" disabled={busy||!cart.length} onClick={submit}>{busy?'Guardando…':<>Agregar e imprimir comanda <Printer size={17}/></>}</button></aside>
+       <aside className="table-side-panel">
+         <section className="table-new-block">
+           <div className="table-side-heading"><div><span>NUEVA COMANDA</span><h3>Por enviar a cocina</h3><p>Solo estos productos se imprimirán al enviar.</p></div><b>{newCount}</b></div>
+           <div className="manual-cart-items table-new-items">{cart.length===0?<div className="manual-cart-empty table-cart-empty"><ShoppingBag size={30}/><p>Selecciona productos del menú para comenzar una nueva comanda.</p></div>:cart.map(row=><div className="manual-cart-row" key={row.key}><div><b>{row.label}</b><span>{row.detail}</span><strong>${money(row.unit*Number(row.payload.quantity||1))}</strong></div><div className="manual-cart-qty"><button onClick={()=>changeCartQty(row.key,-1)}><Minus size={13}/></button><b>{row.payload.quantity||1}</b><button onClick={()=>changeCartQty(row.key,1)}><Plus size={13}/></button></div></div>)}</div>
+           <div className="table-new-total"><span>Total nuevo</span><strong>${money(total)}</strong></div>
+           {error&&<p className="manual-order-error">{error}</p>}
+           <button className="manual-submit table-add-submit" disabled={busy||!cart.length} onClick={submit}>{busy?'Guardando…':<>Agregar e imprimir comanda <Printer size={17}/></>}</button>
+         </section>
+
+         <section className={`table-account-block ${tab?'open':'empty'}`}>
+           <div className="table-account-block-head"><div><span>YA COMANDADO</span><h3>{tab?'Cuenta abierta':'Sin cuenta abierta'}</h3><p>{tab?`Abierta ${new Date(tab.opened_at).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`:'Aparecerá aquí después de enviar la primera comanda.'}</p></div><div><small>TOTAL CUENTA</small><strong>${money(currentTotal)}</strong></div></div>
+           <div className="table-existing-items table-existing-items-side">{existingItems.length?existingItems.map(item=><KitchenItem key={item.id} item={item}/>):<div className="table-existing-empty"><Check size={20}/><span>Todavía no hay productos comandados.</span></div>}</div>
+           {tab&&currentTotal>0&&<button className="table-charge-button" disabled={cart.length>0} title={cart.length?'Primero agrega e imprime la nueva comanda.':'Cobrar cuenta'} onClick={()=>setPaymentOpen(true)}><Banknote size={19}/> Cobrar cuenta · ${money(currentTotal)}</button>}
+         </section>
+       </aside>
      </div>
    </section>
+   {configProduct&&<ProductConfiguratorModal product={configProduct} bases={bases} guisados={guisados} extras={extras} onClose={()=>setConfigProduct(null)} onAdd={row=>setCart(prev=>[...prev,row])} contextLabel="nueva comanda"/>}
    {paymentOpen&&tab&&<TablePaymentModal tab={tab} onClose={()=>setPaymentOpen(false)} onConfirmed={()=>{setPaymentOpen(false);onPaid()}}/>}
  </div>
 }
@@ -750,40 +778,11 @@ function NewOrderModal({menu,onClose,onCreated}){
  const [customerName,setCustomerName]=useState('')
  const [customerPhone,setCustomerPhone]=useState('')
  const [pickup,setPickup]=useState('Lo antes posible · 10–15 min')
- const [product,setProduct]=useState(null)
- const [base,setBase]=useState(null)
- const [selectedGuisados,setSelectedGuisados]=useState([])
- const [extraQty,setExtraQty]=useState({})
+ const [configProduct,setConfigProduct]=useState(null)
  const [cart,setCart]=useState([])
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
 
- useEffect(()=>{if(!base&&bases.length)setBase(bases[0])},[bases,base])
-
- const chooseProduct=(p)=>{setProduct(p);setBase(bases[0]||null);setSelectedGuisados([]);setExtraQty({})}
- const toggleGuisado=(g)=>{
-   if(!product)return
-   const max=maxGuisadosFor(product)
-   setSelectedGuisados(prev=>prev.some(x=>x.slug===g.slug)?prev.filter(x=>x.slug!==g.slug):prev.length<max?[...prev,g]:prev)
- }
- const changeExtra=(item,delta)=>setExtraQty(prev=>{
-   const next=Math.max(0,Math.min(20,Number(prev[item.slug]||0)+delta))
-   const clone={...prev}; if(next)clone[item.slug]=next;else delete clone[item.slug]; return clone
- })
- const builderTotal=product?Number(product.price||0)+Number(base?.price||0)+selectedGuisados.reduce((s,g)=>s+Number(g.price||0),0)+Object.entries(extraQty).reduce((s,[slug,qty])=>s+(Number(extras.find(x=>x.slug===slug)?.price||0)*qty),0):0
- const addConfigured=()=>{
-   setError('')
-   if(!product||!base||!selectedGuisados.length){setError('Selecciona Chi-nito, base y al menos un guisado.');return}
-   const chosenExtras=Object.entries(extraQty).map(([slug,quantity])=>({item:extras.find(x=>x.slug===slug),quantity})).filter(x=>x.item)
-   const row={
-     key:`cfg-${Date.now()}-${Math.random()}`,
-     label:product.name,
-     detail:`${base.name} · ${selectedGuisados.map(g=>g.name).join(', ')}${chosenExtras.length?` · Extras: ${chosenExtras.map(x=>`${x.quantity>1?`${x.quantity}× `:''}${x.item.name}`).join(', ')}`:''}`,
-     unit:builderTotal,
-     payload:{kind:'configured',catalog_slug:product.slug,quantity:1,base_slug:base.slug,guisado_slugs:selectedGuisados.map(g=>g.slug),extras:chosenExtras.map(x=>({catalog_slug:x.item.slug,quantity:x.quantity}))},
-   }
-   setCart(prev=>[...prev,row]);setSelectedGuisados([]);setExtraQty({})
- }
  const addSimple=(item,kind,variant=null,priceOverride=null)=>{
    const unit=Number((priceOverride ?? item.price) || 0)
    setCart(prev=>[...prev,{key:`simple-${Date.now()}-${Math.random()}`,label:item.name,detail:variant||item.category,unit,payload:{kind,catalog_slug:item.slug,quantity:1,variant}}])
@@ -806,23 +805,18 @@ function NewOrderModal({menu,onClose,onCreated}){
 
  return <div className="manual-order-overlay" onMouseDown={onClose}>
    <section className="manual-order-modal" onMouseDown={e=>e.stopPropagation()}>
-     <header className="manual-order-head"><div><span>NUEVO PEDIDO</span><h2>Captura desde cocina</h2><p>Arma el pedido igual que en la app y envíalo directo a Preparando.</p></div><button onClick={onClose} aria-label="Cerrar"><X size={22}/></button></header>
+     <header className="manual-order-head"><div><span>NUEVO PEDIDO RÁPIDO</span><h2>Captura desde cocina</h2><p>Selecciona un Chi-nito y personalízalo en una ventana independiente.</p></div><button onClick={onClose} aria-label="Cerrar"><X size={22}/></button></header>
      <div className="manual-order-body">
        <div className="manual-order-builder">
          <section className="manual-customer"><label><UserRound size={16}/><span>Nombre del cliente</span><input value={customerName} onChange={e=>setCustomerName(e.target.value)} placeholder="Mostrador"/></label><label><Phone size={16}/><span>Teléfono</span><input value={customerPhone} onChange={e=>setCustomerPhone(e.target.value)} placeholder="Opcional"/></label><label className="wide"><Clock3 size={16}/><span>Pickup</span><select value={pickup} onChange={e=>setPickup(e.target.value)}><option>Lo antes posible · 10–15 min</option><option>En 15 minutos</option><option>En 30 minutos</option><option>En 45 minutos</option></select></label></section>
-
-         <section className="manual-section"><div className="manual-section-title"><span>1</span><div><h3>Elige un Chi-nito</h3><p>Después selecciona base, guisados y extras.</p></div></div><div className="manual-product-grid">{products.map(p=><button key={p.slug} className={product?.slug===p.slug?'selected':''} onClick={()=>chooseProduct(p)}><img src={p.image||'/logo.jpg'} alt=""/><b>{p.name}</b><span>${money(p.price)}</span></button>)}</div></section>
-
-         {product&&<section className="manual-section configured"><div className="manual-config-head"><div><span>PERSONALIZANDO</span><h3>{product.name}</h3></div><strong>${money(builderTotal)}</strong></div><h4>Base</h4><div className="manual-choice-grid compact">{bases.map(b=><button key={b.slug} className={base?.slug===b.slug?'selected':''} onClick={()=>setBase(b)}><b>{b.name}</b>{Number(b.price)>0&&<span>+${money(b.price)}</span>}</button>)}</div><h4>Guisados <small>{selectedGuisados.length}/{maxGuisadosFor(product)}</small></h4><div className="manual-choice-grid">{guisados.map(g=><button key={g.slug} className={selectedGuisados.some(x=>x.slug===g.slug)?'selected':''} onClick={()=>toggleGuisado(g)}><b>{g.name}</b>{Number(g.price)>0&&<span>+${money(g.price)}</span>}</button>)}</div><h4>Extras</h4><div className="manual-extra-grid">{extras.map(item=>{const qty=Number(extraQty[item.slug]||0);return <div key={item.slug}><div><b>{item.name}</b><span>${money(item.price)}</span></div><div className="manual-qty"><button onClick={()=>changeExtra(item,-1)} disabled={!qty}><Minus size={13}/></button><strong>{qty}</strong><button onClick={()=>changeExtra(item,1)}><Plus size={13}/></button></div></div>})}</div><button className="manual-add-configured" onClick={addConfigured}><Plus size={17}/> Agregar {product.name} · ${money(builderTotal)}</button></section>}
-
+         <section className="manual-section"><div className="manual-section-title"><span>1</span><div><h3>Elige un Chi-nito</h3><p>Toca uno para abrir su personalizador.</p></div></div><div className="manual-product-grid">{products.map(p=><button key={p.slug} onClick={()=>setConfigProduct(p)}><img src={p.image||'/logo.jpg'} alt=""/><b>{p.name}</b><span>${money(p.price)}</span></button>)}</div></section>
          <section className="manual-section"><div className="manual-section-title"><span>2</span><div><h3>Complementos y bebidas</h3><p>Agrégalos directamente al pedido.</p></div></div><div className="manual-simple-grid">{[...complements,...drinks].map(item=><button key={item.slug} onClick={()=>addSimple(item,item.category==='Bebida'?'drink':'addon')}><img src={item.image||'/logo.jpg'} alt=""/><div><b>{item.name}</b><span>${money(item.price)}</span></div><Plus size={16}/></button>)}</div></section>
-
          {takeaway.length>0&&<section className="manual-section"><div className="manual-section-title"><span>3</span><div><h3>Guisados para llevar</h3><p>Agrega medio litro o un litro.</p></div></div><div className="manual-takeaway-grid">{takeaway.map(item=><div key={item.slug}><b>{item.name}</b><div>{Number(item.metadata?.half_price)>0&&<button onClick={()=>addSimple(item,'takeaway','1/2 litro',item.metadata.half_price)}>1/2 L · ${money(item.metadata.half_price)}</button>}{Number(item.metadata?.liter_price)>0&&<button onClick={()=>addSimple(item,'takeaway','1 litro',item.metadata.liter_price)}>1 L · ${money(item.metadata.liter_price)}</button>}</div></div>)}</div></section>}
        </div>
-
        <aside className="manual-cart"><div className="manual-cart-head"><div><span>PEDIDO</span><h3>Resumen</h3></div><b>{cart.reduce((s,r)=>s+Number(r.payload.quantity||1),0)}</b></div><div className="manual-cart-items">{cart.length===0?<div className="manual-cart-empty"><ShoppingBag size={30}/><p>Agrega productos para comenzar.</p></div>:cart.map(row=><div className="manual-cart-row" key={row.key}><div><b>{row.label}</b><span>{row.detail}</span><strong>${money(row.unit*Number(row.payload.quantity||1))}</strong></div><div className="manual-cart-qty"><button onClick={()=>changeCartQty(row.key,-1)}><Minus size={13}/></button><b>{row.payload.quantity||1}</b><button onClick={()=>changeCartQty(row.key,1)}><Plus size={13}/></button></div></div>)}</div><div className="manual-cart-total"><span>Total</span><strong>${money(total)}</strong></div>{error&&<p className="manual-order-error">{error}</p>}<button className="manual-submit" disabled={busy||!cart.length} onClick={submit}>{busy?'Creando pedido…':<>Enviar a Preparando <Flame size={17}/></>}</button></aside>
      </div>
    </section>
+   {configProduct&&<ProductConfiguratorModal product={configProduct} bases={bases} guisados={guisados} extras={extras} onClose={()=>setConfigProduct(null)} onAdd={row=>setCart(prev=>[...prev,row])} contextLabel="pedido"/>}
  </div>
 }
 
