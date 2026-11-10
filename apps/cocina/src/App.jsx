@@ -2,10 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, Check, ChefHat, Clock3, CloudRain, CreditCard, Eye, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UtensilsCrossed, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,delivered_at,order_source,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const tableItemSelect='id,batch_id,item_type,catalog_slug,name,quantity,unit_price,base_name,guisados,extras,variant,created_at'
 const tableTabSelect=`id,table_number,status,total,tip_amount,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,updated_at,table_tab_items(${tableItemSelect})`
 const activeStatuses=['Nuevo','Preparando','Listo']
+const isAppOrder=order=>order?.order_source!=='staff'
+const elapsedSeconds=(from,to)=>from?Math.max(0,Math.floor((new Date(to).getTime()-new Date(from).getTime())/1000)):0
+const elapsedLabel=seconds=>{
+ const hours=Math.floor(seconds/3600),minutes=Math.floor(seconds%3600/60),secs=seconds%60
+ return `${hours?`${String(hours).padStart(2,'0')}:`:''}${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`
+}
+
 const PICKUP_DAY_INDEX={domingo:0,lunes:1,martes:2,'miércoles':3,miercoles:3,jueves:4,viernes:5,'sábado':6,sabado:6}
 const isScheduledPickup=(label='')=>/^(?:(?:Mañana|Domingo|Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes|Sábado|Sabado)\s*·\s*)?\d{2}:\d{2}$/i.test(String(label||'').trim())
 const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
@@ -350,6 +357,8 @@ export default function App(){
  const [lastSyncAt,setLastSyncAt]=useState(null)
  const [syncError,setSyncError]=useState('')
  const loadRequestRef=useRef(0)
+ const [soundChoice,setSoundChoice]=useState(null)
+ const audioContextRef=useRef(null)
 
  const validateSession=useCallback(async(nextSession)=>{
    if(!nextSession || !supabase){setSession(null);setAuthReady(true);return}
@@ -531,23 +540,59 @@ export default function App(){
  const preparing=useMemo(()=>orders.filter(o=>(o.status==='Nuevo'||o.status==='Preparando')&&!scheduledIds.has(o.id)),[orders,scheduledIds])
  const ready=useMemo(()=>orders.filter(o=>o.status==='Listo'),[orders])
  const tableTabsByNumber=useMemo(()=>new Map(tableTabs.map(tab=>[Number(tab.table_number),tab])),[tableTabs])
+ const pendingAppOrders=useMemo(()=>orders.filter(o=>isAppOrder(o)&&!o.kitchen_acknowledged_at&&!isWaitingScheduledOrder(o,clock)),[orders,clock])
+ const alertCount=pendingAppOrders.length
+ const playOrderAlert=useCallback(()=>{
+   const ctx=audioContextRef.current
+   if(!ctx||ctx.state!=='running')return
+   try{
+     const t=ctx.currentTime
+     for(const [i,freq] of [784,1046,784].entries()){
+       const osc=ctx.createOscillator(),gain=ctx.createGain()
+       osc.type='sine';osc.frequency.value=freq
+       gain.gain.setValueAtTime(0.0001,t+i*0.18)
+       gain.gain.exponentialRampToValueAtTime(0.16,t+i*0.18+0.018)
+       gain.gain.exponentialRampToValueAtTime(0.0001,t+i*0.18+0.15)
+       osc.connect(gain);gain.connect(ctx.destination)
+       osc.start(t+i*0.18);osc.stop(t+i*0.18+0.16)
+     }
+   }catch(error){console.warn('No se pudo reproducir el aviso de Cocina',error)}
+ },[])
+ const enableSound=async()=>{
+   try{
+     const AudioCtor=window.AudioContext||window.webkitAudioContext
+     if(!AudioCtor)throw new Error('Este navegador no admite audio web.')
+     if(!audioContextRef.current)audioContextRef.current=new AudioCtor()
+     await audioContextRef.current.resume()
+     setSoundChoice(true)
+   }catch(error){window.alert(error.message||'No fue posible activar el sonido.');setSoundChoice(false)}
+ }
+ useEffect(()=>{
+   if(!soundChoice||!alertCount)return
+   playOrderAlert()
+   const timer=window.setInterval(playOrderAlert,2400)
+   return ()=>window.clearInterval(timer)
+ },[soundChoice,alertCount,playOrderAlert])
+ useEffect(()=>()=>{if(audioContextRef.current)audioContextRef.current.close().catch(()=>{})},[])
+
 
  const acknowledge=async(order)=>{
    if(!order?.id||order.kitchen_acknowledged_at)return true
    const acknowledgedAt=new Date().toISOString()
-   const {error}=await supabase.from('orders').update({kitchen_acknowledged_at:acknowledgedAt}).eq('id',order.id)
+   const nextStatus=order.status==='Nuevo'?'Preparando':order.status
+   const {error}=await supabase.from('orders').update({kitchen_acknowledged_at:acknowledgedAt,status:nextStatus}).eq('id',order.id)
    if(error){
      console.error('Kitchen acknowledge error',error)
      window.alert('No pudimos marcar el pedido como enterado. Revisa la conexión e intenta nuevamente.')
      return false
    }
-   setOrders(prev=>prev.map(o=>o.id===order.id?{...o,kitchen_acknowledged_at:acknowledgedAt}:o))
-   setDetailOrder(current=>current?.id===order.id?{...current,kitchen_acknowledged_at:acknowledgedAt}:current)
+   setOrders(prev=>prev.map(o=>o.id===order.id?{...o,kitchen_acknowledged_at:acknowledgedAt,status:nextStatus}:o))
+   setDetailOrder(current=>current?.id===order.id?{...current,kitchen_acknowledged_at:acknowledgedAt,status:nextStatus}:current)
    return true
  }
 
  const advance=async(order)=>{
-   if(order.status!=='Listo'&&!order.kitchen_acknowledged_at){
+   if(order.status!=='Listo'&&isAppOrder(order)&&!order.kitchen_acknowledged_at){
      window.alert('Primero toca “Enterado” para confirmar que Cocina ya vio este pedido.')
      return
    }
@@ -556,7 +601,8 @@ export default function App(){
      return
    }
    const next=order.status==='Listo'?'Entregado':'Listo'
-   const {error}=await supabase.from('orders').update({status:next}).eq('id',order.id)
+   const deliveredAt=next==='Entregado'?new Date().toISOString():null
+   const {error}=await supabase.from('orders').update(next==='Entregado'?{status:next,delivered_at:deliveredAt}:{status:next}).eq('id',order.id)
    if(!error){
      if(next==='Entregado'){setOrders(prev=>prev.filter(o=>o.id!==order.id));setDetailOrder(null)}
      else{
@@ -571,7 +617,7 @@ export default function App(){
  if(!session)return <KitchenLogin error={authError}/>
 
  return <div className="kitchen">
-  <header><div className="brand"><img src="/logo.jpg" alt="Chi-nito"/><div><span>KITCHEN MODE</span><b>CHI-NITO</b></div></div><div className="header-right"><div className="online" title={syncError||`Última sincronización: ${lastSyncAt?lastSyncAt.toLocaleTimeString('es-MX'):'pendiente'}`}><i style={{background:realtimeState==='live'?'#22c55e':realtimeState==='offline'?'#ef4444':'#f59e0b'}}/> {loading?'Actualizando…':realtimeState==='live'?'En tiempo real':realtimeState==='offline'?'Sin conexión':realtimeState==='degraded'?'Reconectando…':'Conectando…'}</div><div className="online"><Clock3 size={15}/> {new Date(clock).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div><button onClick={()=>loadOrders()} aria-label="Actualizar"><RotateCcw size={17}/></button><button onClick={()=>supabase.auth.signOut()} aria-label="Cerrar sesión"><LogOut size={17}/></button></div></header>
+  <header><div className="brand"><img src="/logo.jpg" alt="Chi-nito"/><div><span>KITCHEN MODE</span><b>CHI-NITO</b></div></div><div className="header-right"><div className="online" title={syncError||`Última sincronización: ${lastSyncAt?lastSyncAt.toLocaleTimeString('es-MX'):'pendiente'}`}><i style={{background:realtimeState==='live'?'#22c55e':realtimeState==='offline'?'#ef4444':'#f59e0b'}}/> {loading?'Actualizando…':realtimeState==='live'?'En tiempo real':realtimeState==='offline'?'Sin conexión':realtimeState==='degraded'?'Reconectando…':'Conectando…'}</div><div className="online"><Clock3 size={15}/> {new Date(clock).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</div><button onClick={()=>soundChoice?setSoundChoice(false):enableSound()} title={soundChoice?'Desactivar sonido':'Activar sonido'} aria-label={soundChoice?'Desactivar sonido':'Activar sonido'}>{soundChoice?<span aria-hidden="true">🔊</span>:<span aria-hidden="true">🔇</span>}</button><button onClick={()=>loadOrders()} aria-label="Actualizar"><RotateCcw size={17}/></button><button onClick={()=>supabase.auth.signOut()} aria-label="Cerrar sesión"><LogOut size={17}/></button></div></header>
   <main>
     <section className="k-head"><div><span className="eyebrow">PEDIDOS EN TIEMPO REAL</span><h1>Kitchen Mode</h1><p>Prepara, libera y entrega pedidos desde una sola vista.</p></div><div className="k-head-actions"><div className="counters"><Counter label="Preparando" n={preparing.length}/><Counter label="Listos" n={ready.length}/></div><button className="scheduled-orders-button" onClick={()=>setScheduledOpen(true)}><Clock3 size={18}/> Pedidos programados <b>{scheduled.length}</b></button><button className="new-order-button" onClick={()=>setNewOrderOpen(true)}><Plus size={19}/> Nuevo pedido rápido</button><button className={`tables-button ${tablesVisible?'active':''}`} onClick={()=>setTablesVisible(v=>!v)}><UtensilsCrossed size={18}/> Mesas <b>{tableTabs.length}</b></button></div></section>
 
@@ -579,17 +625,18 @@ export default function App(){
 
     <section className="k-board">
       <OrderLane title="Preparando" subtitle="Todos los pedidos activos en preparación" count={preparing.length} tone="prep">
-        {preparing.length?preparing.map(o=><Ticket key={o.id} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)} onAdvance={()=>advance(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos activos aparecerán aquí automáticamente, aunque sean de días anteriores."/>}
+        {preparing.length?preparing.map(o=><Ticket key={o.id} now={clock} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)} onAdvance={()=>advance(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos activos aparecerán aquí automáticamente, aunque sean de días anteriores."/>}
       </OrderLane>
       <OrderLane title="Listos para recoger" subtitle="Esperando al cliente" count={ready.length} tone="ready">
-        {ready.length?ready.map(o=><Ticket key={o.id} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)} onAdvance={()=>advance(o)}/>):<LaneEmpty icon={<Check size={34}/>} title="Nada listo todavía" text="Cuando marques un pedido como listo aparecerá en esta columna."/>}
+        {ready.length?ready.map(o=><Ticket key={o.id} now={clock} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)} onAdvance={()=>advance(o)}/>):<LaneEmpty icon={<Check size={34}/>} title="Nada listo todavía" text="Cuando marques un pedido como listo aparecerá en esta columna."/>}
       </OrderLane>
     </section>
   </main>
-  {detailOrder&&<OrderDetailsModal order={detailOrder} onClose={()=>setDetailOrder(null)} onAcknowledge={()=>acknowledge(detailOrder)} onAdvance={()=>advance(detailOrder)}/>}
+  {detailOrder&&<OrderDetailsModal now={clock} order={detailOrder} onClose={()=>setDetailOrder(null)} onAcknowledge={()=>acknowledge(detailOrder)} onAdvance={()=>advance(detailOrder)}/>}
   {scheduledOpen&&<ScheduledOrdersModal orders={scheduled} now={clock} onClose={()=>setScheduledOpen(false)}/>}
   {newOrderOpen&&<NewOrderModal menu={menu} onClose={()=>setNewOrderOpen(false)} onCreated={()=>{setNewOrderOpen(false);loadOrders()}}/>}
   {selectedTable&&<TableOrderModal tableNumber={selectedTable} tab={tableTabsByNumber.get(Number(selectedTable))||null} menu={menu} onClose={()=>setSelectedTable(null)} onUpdated={()=>loadTables()} onPaid={()=>{setSelectedTable(null);loadTables()}}/>}
+  {soundChoice===null&&<div className="k-sound-overlay"><section className="k-sound-modal"><div className="k-sound-icon">🔔</div><h2>¿Activar sonido de pedidos?</h2><p>Los pedidos que lleguen desde la app harán sonar una alerta repetida hasta tocar <b>Enterado</b>. Los pedidos rápidos no generan esa alerta.</p><div><button onClick={()=>setSoundChoice(false)}>Ahora no</button><button className="k-sound-yes" onClick={enableSound}>Activar sonido</button></div></section></div>}
   {paymentOrder&&<OrderPaymentModal order={paymentOrder} onClose={()=>setPaymentOrder(null)} onConfirmed={receipt=>{setPaymentOrder(null);setDetailOrder(null);setOrders(prev=>prev.filter(o=>o.id!==receipt.id));loadOrders({silent:true})}}/>}
  </div>
 }
@@ -869,14 +916,15 @@ function OrderLane({title,subtitle,count,tone,children}){
 
 function LaneEmpty({icon,title,text}){return <div className="lane-empty">{icon}<h3>{title}</h3><p>{text}</p></div>}
 
-function Ticket({order,onAcknowledge,onDetails,onAdvance}){
- const acknowledged=Boolean(order.kitchen_acknowledged_at)
+function Ticket({order,now,onAcknowledge,onDetails,onAdvance}){
+ const acknowledged=Boolean(order.kitchen_acknowledged_at)||!isAppOrder(order)
  const isReady=order.status==='Listo'
  return <article className={`ticket compact-ticket ${order.status.toLowerCase()} ${acknowledged?'acknowledged':'unacknowledged'}`}>
    <div className="ticket-top compact-ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div></div>
 
+   {isAppOrder(order)&&<div className="k-elapsed-timer"><Clock3 size={15}/><span>Tiempo desde pedido</span><b>{elapsedLabel(elapsedSeconds(order.created_at,order.delivered_at||now))}</b></div>}
    <div className="compact-ticket-actions">
-     <button className={`acknowledge ${acknowledged?'done':''}`} disabled={acknowledged} onClick={onAcknowledge}><Check size={17}/> Enterado</button>
+     {isAppOrder(order)&&<button className={`acknowledge ${acknowledged?'done':''}`} disabled={acknowledged} onClick={onAcknowledge}><Check size={17}/> Enterado</button>}
      <button className="details-button" onClick={onDetails}><Eye size={17}/> Ver detalles</button>
    </div>
 
@@ -891,14 +939,15 @@ function Ticket({order,onAcknowledge,onDetails,onAdvance}){
  </article>
 }
 
-function OrderDetailsModal({order,onClose,onAcknowledge,onAdvance}){
- const acknowledged=Boolean(order.kitchen_acknowledged_at)
+function OrderDetailsModal({order,now,onClose,onAcknowledge,onAdvance}){
+ const acknowledged=Boolean(order.kitchen_acknowledged_at)||!isAppOrder(order)
  const subtotal=orderSubtotal(order)
  return <div className="order-detail-overlay" onMouseDown={onClose}>
    <section className="order-detail-modal" onMouseDown={e=>e.stopPropagation()}>
      <header><div><span>PEDIDO {order.order_number}</span><h2>{order.customer_name}</h2><p>{displayPickupLabel(order.pickup_label)} · {order.customer_phone||'Sin teléfono'}</p></div><button onClick={onClose} aria-label="Cerrar"><X size={21}/></button></header>
      <div className="order-detail-body">
        <div className="order-detail-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)} · {paymentStatusLabel(order)}</b></div><div><span>Recibido</span><b>{thermalDate(order.created_at)}</b></div></div>
+       {isAppOrder(order)&&<section className="k-detail-timing"><h3>Tiempo del pedido</h3><div><Clock3 size={17}/><span>Transcurrido desde que llegó</span><strong>{elapsedLabel(elapsedSeconds(order.created_at,order.delivered_at||now))}</strong></div><small>{order.kitchen_acknowledged_at?'Cocina confirmó que recibió el pedido.':'Pendiente de Enterado · la alerta seguirá sonando si está activada.'}</small></section>}
        <section><h3>Productos</h3><div className="detail-items">{(order.order_items||[]).map(i=><KitchenItem item={i} key={i.id}/>)}</div></section>
        <section className="order-financial-detail"><h3>Desglose</h3><div><span>Subtotal</span><b>{thermalMoney(subtotal)}</b></div>{Number(order.rain_delivery_fee||0)>0&&<div><span>Envío con lluvia</span><b>+{thermalMoney(order.rain_delivery_fee)}</b></div>}{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{thermalMoney(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{thermalMoney(order.cashback_used)}</b></div>}<div className="total"><span>Total</span><b>{thermalMoney(order.total)}</b></div></section>
      </div>

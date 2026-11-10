@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Printer, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, Trash2, X, ImagePlus } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,delivered_at,order_source,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 
 const tableTabSelect='id,table_number,status,total,tip_amount,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,table_tab_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const tableToOrder=(tab)=>({
@@ -17,6 +17,14 @@ const tableToOrder=(tab)=>({
 })
 const orderPaidTotal=o=>Number(o.total||0)+Number(o.tip_amount||0)
 const orderPlace=o=>o.is_table_order?`Mesa ${o.table_number}`:(o.customer_name||'Mostrador')
+const trackedAppOrder=o=>!o.is_table_order&&o.order_source!=='staff'
+const durationSeconds=(start,end)=>start&&end?Math.max(0,Math.floor((new Date(end)-new Date(start))/1000)):null
+const durationLabel=seconds=>{
+ if(seconds===null||!Number.isFinite(seconds))return 'Pendiente'
+ const h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=seconds%60
+ return `${h?`${h} h `:''}${m?`${m} min `:''}${s} seg`
+}
+
 
 const itemSummary=(o)=>(o.order_items||[]).map(i=>`${i.quantity>1?`${i.quantity}× `:''}${i.name}`).join(' + ') || 'Sin productos'
 const pickupShort=(label='')=>label.replace('Hoy, ','').replace('Lo antes posible · ','ASAP · ')
@@ -389,6 +397,7 @@ function PanelOrderDetails({order,onClose,onAdvance}){
    <header><div><span className="eyebrow">{order.order_number}</span><h2>{orderPlace(order)}</h2><p>{order.is_table_order?'Consumo en mesa':`${order.customer_phone||'Sin teléfono'} · ${pickupShort(order.pickup_label)}`}</p></div><button onClick={onClose}><X size={20}/></button></header>
    <div className="panel-order-detail-body">
     <div className="panel-order-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)}</b></div><div><span>Fecha</span><b>{new Date(order.paid_at||order.created_at).toLocaleString('es-MX')}</b></div></div>{order.payment_status==='paid'&&order.settlement_method&&<section className="panel-payment-record"><h3>Pago registrado</h3><div className="panel-payment-record-grid"><div><span>Método</span><b>{paymentLabel(order)}</b></div>{order.settlement_method==='cash'&&<><div><span>Recibido</span><b>{money(order.cash_received)}</b></div><div><span>Cambio</span><b>{money(order.change_due)}</b></div></>}{order.settlement_method==='card'&&<div><span>Folio tarjeta</span><b>{order.card_folio||'Sin folio'}</b></div>}{Number(order.tip_amount||0)>0&&<div><span>Propina</span><b>{money(order.tip_amount)}</b></div>}</div></section>}
+    {trackedAppOrder(order)&&<section className="panel-timing-section"><h3>Tiempos de atención</h3><div className="panel-timing-grid"><div><span>Hasta Enterado</span><b>{durationLabel(durationSeconds(order.created_at,order.kitchen_acknowledged_at))}</b>{order.kitchen_acknowledged_at&&<small>{new Date(order.kitchen_acknowledged_at).toLocaleTimeString('es-MX')}</small>}</div><div><span>Tiempo total hasta Entregado</span><b>{durationLabel(durationSeconds(order.created_at,order.delivered_at))}</b>{order.delivered_at&&<small>{new Date(order.delivered_at).toLocaleTimeString('es-MX')}</small>}</div></div></section>}
     <section><h3>Productos</h3><div className="panel-detail-items">{(order.order_items||[]).map((item,index)=><div className="panel-detail-item" key={item.id||index}><div><b>{item.quantity>1?`${item.quantity} × `:''}{item.name}</b>{item.base_name&&<span>Base: {item.base_name}</span>}{Array.isArray(item.guisados)&&item.guisados.length>0&&<span>Guisados: {item.guisados.join(' · ')}</span>}{item.variant&&<span>{item.variant}</span>}{Array.isArray(item.extras)&&item.extras.length>0&&<span>Extras: {item.extras.map(e=>`${Number(e.quantity||1)>1?`${e.quantity}× `:''}${e.name}`).join(', ')}</span>}</div><strong>{money(Number(item.unit_price||0)*Number(item.quantity||1))}</strong></div>)}</div></section>
     <section className="panel-order-totals"><h3>Desglose</h3><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{Number(order.rain_delivery_fee||0)>0&&<div><span>Envío con lluvia</span><b>+{money(order.rain_delivery_fee)}</b></div>}{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{money(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{money(order.cashback_used)}</b></div>}<div className="total"><span>Total consumo</span><b>{money(order.total)}</b></div>{Number(order.tip_amount||0)>0&&<div><span>Propina</span><b>+{money(order.tip_amount)}</b></div>}<div className="total"><span>Total pagado</span><b>{money(orderPaidTotal(order))}</b></div></section>
    </div>
