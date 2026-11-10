@@ -2,7 +2,21 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Printer, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, Trash2, X, ImagePlus } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,cash_received,change_due,card_folio,paid_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+
+const tableTabSelect='id,table_number,status,total,tip_amount,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,table_tab_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const tableToOrder=(tab)=>({
+ id:`mesa-${tab.id}`,table_number:tab.table_number,is_table_order:true,
+ order_number:`Mesa ${tab.table_number}`,customer_name:`Mesa ${tab.table_number}`,customer_phone:null,
+ pickup_label:`Mesa ${tab.table_number}`,payment_method:'pickup',payment_status:'paid',
+ settlement_method:tab.payment_method,total:tab.total,tip_amount:tab.tip_amount||0,
+ status:'Entregado',cashback_used:0,first_order_discount:0,rain_delivery_fee:0,
+ cash_received:tab.cash_received,change_due:tab.change_due,card_folio:tab.card_folio,
+ created_at:tab.opened_at,paid_at:tab.closed_at,
+ order_items:tab.table_tab_items||[]
+})
+const orderPaidTotal=o=>Number(o.total||0)+Number(o.tip_amount||0)
+const orderPlace=o=>o.is_table_order?`Mesa ${o.table_number}`:(o.customer_name||'Mostrador')
 
 const itemSummary=(o)=>(o.order_items||[]).map(i=>`${i.quantity>1?`${i.quantity}× `:''}${i.name}`).join(' + ') || 'Sin productos'
 const pickupShort=(label='')=>label.replace('Hoy, ','').replace('Lo antes posible · ','ASAP · ')
@@ -70,13 +84,15 @@ const saleProductLines=(order)=>{
 const printSaleTicket=(order)=>{
  const popup=window.open('','_blank','width=480,height=820')
  if(!popup){window.alert('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes para Panel.');return}
- const lines=[thermalCenter('CHI-NITO'),thermalCenter('TICKET DE VENTA'),thermalRule('='),...thermalWrap(`PEDIDO: ${order.order_number||''}`),...thermalWrap(`FECHA: ${thermalDate(order.paid_at||order.created_at)}`),...thermalWrap(`CLIENTE: ${order.customer_name||'Mostrador'}`)]
+ const lines=[thermalCenter('CHI-NITO'),thermalCenter('TICKET DE VENTA'),thermalRule('='),...thermalWrap(`PEDIDO: ${order.order_number||''}`),...thermalWrap(`FECHA: ${thermalDate(order.paid_at||order.created_at)}`),...thermalWrap(`${order.is_table_order?'MESA':'CLIENTE'}: ${orderPlace(order)}`)]
  if(order.customer_phone)lines.push(...thermalWrap(`TEL: ${order.customer_phone}`))
  lines.push(...thermalWrap(`PICKUP: ${order.pickup_label||'Lo antes posible'}`),...thermalWrap(`PAGO: ${paymentLabel(order).toUpperCase()} - ${order.payment_status==='paid'?'PAGADO':'PENDIENTE'}`),thermalRule('='),...saleProductLines(order),thermalRule('='),...thermalPair('SUBTOTAL',thermalMoney(orderSubtotal(order))))
  if(Number(order.rain_delivery_fee||0)>0)lines.push(...thermalPair('ENVIO CON LLUVIA',`+${thermalMoney(order.rain_delivery_fee)}`))
  if(Number(order.first_order_discount||0)>0)lines.push(...thermalPair('REGALO PRIMER PEDIDO',`-${thermalMoney(order.first_order_discount)}`))
  if(Number(order.cashback_used||0)>0)lines.push(...thermalPair('CASHBACK',`-${thermalMoney(order.cashback_used)}`))
- lines.push(...thermalPair('TOTAL',thermalMoney(order.total)))
+ lines.push(...thermalPair('TOTAL CONSUMO',thermalMoney(order.total)))
+  if(Number(order.tip_amount||0)>0)lines.push(...thermalPair('PROPINA',`+${thermalMoney(order.tip_amount)}`))
+  lines.push(...thermalPair('TOTAL PAGADO',thermalMoney(orderPaidTotal(order))))
  if(order.settlement_method==='cash'){lines.push(...thermalPair('RECIBIDO',thermalMoney(order.cash_received)));lines.push(...thermalPair('CAMBIO',thermalMoney(order.change_due)))}
  else if(order.settlement_method==='card'&&order.card_folio)lines.push(...thermalWrap(`FOLIO TARJETA: ${order.card_folio}`))
  lines.push(thermalRule('='),'',thermalCenter('GRACIAS POR SU COMPRA'),thermalCenter('ESTE TICKET NO ES COMPROBANTE FISCAL'),'','','')
@@ -112,9 +128,13 @@ const exportRangeOrders=async(from,to)=>{
  if(from>to)throw new Error('La fecha inicial no puede ser posterior a la fecha final.')
  const {start}=dateBounds(from)
  const {end}=dateBounds(to)
- const {data,error}=await supabase.from('orders').select(orderSelect).gte('created_at',start.toISOString()).lt('created_at',end.toISOString()).order('created_at',{ascending:true})
- if(error)throw error
- return (data||[]).filter(exportableSale)
+ const [ordersResult,tablesResult]=await Promise.all([
+   supabase.from('orders').select(orderSelect).gte('created_at',start.toISOString()).lt('created_at',end.toISOString()).order('created_at',{ascending:true}),
+   supabase.from('table_tabs').select(tableTabSelect).eq('status','closed').gte('closed_at',start.toISOString()).lt('closed_at',end.toISOString()).order('closed_at',{ascending:true})
+  ])
+  if(ordersResult.error)throw ordersResult.error
+  if(tablesResult.error)throw tablesResult.error
+  return [...(ordersResult.data||[]).filter(exportableSale),...(tablesResult.data||[]).map(tableToOrder)]
 }
 
 const exportPeriodLabel=(from,to)=>from===to?dateLabel(from):`${dateLabel(from)} a ${dateLabel(to)}`
@@ -124,6 +144,7 @@ const exportStamp=(from,to)=>from===to?from:`${from}_a_${to}`
 export default function App(){
  const [section,setSection]=useState('Resumen')
  const [orders,setOrders]=useState([])
+ const [tableHistory,setTableHistory]=useState([])
  const [menu,setMenu]=useState([])
  const [settings,setSettings]=useState(null)
  const [q,setQ]=useState('')
@@ -158,12 +179,15 @@ export default function App(){
    if(!supabase || !session) return
    setLoading(true)
    const {start,end}=dateBounds(selectedDate)
-   const [ordersRes,menuRes,settingsRes]=await Promise.all([
+   const [ordersRes,tablesRes,menuRes,settingsRes]=await Promise.all([
      supabase.from('orders').select(orderSelect).gte('created_at',start.toISOString()).lt('created_at',end.toISOString()).order('created_at',{ascending:false}),
+      supabase.from('table_tabs').select(tableTabSelect).eq('status','closed').gte('closed_at',start.toISOString()).lt('closed_at',end.toISOString()).order('closed_at',{ascending:false}),
      supabase.from('menu_items').select('*').order('sort_order',{ascending:true}),
      supabase.from('store_settings').select('*').eq('id',1).maybeSingle(),
    ])
    if(ordersRes.data) setOrders(ordersRes.data)
+    if(tablesRes.data)setTableHistory(tablesRes.data.map(tableToOrder))
+    else if(tablesRes.error)console.error('Error leyendo historial de mesas:',tablesRes.error)
    if(menuRes.data) setMenu(menuRes.data)
    if(settingsRes.data) setSettings(settingsRes.data)
    setLoading(false)
@@ -174,6 +198,8 @@ export default function App(){
    if(!supabase || !session) return
    const channel=supabase.channel('panel-live')
      .on('postgres_changes',{event:'*',schema:'public',table:'orders'},loadData)
+      .on('postgres_changes',{event:'*',schema:'public',table:'table_tabs'},loadData)
+      .on('postgres_changes',{event:'*',schema:'public',table:'table_tab_items'},loadData)
      .on('postgres_changes',{event:'*',schema:'public',table:'order_items'},loadData)
      .on('postgres_changes',{event:'*',schema:'public',table:'menu_items'},loadData)
      .on('postgres_changes',{event:'*',schema:'public',table:'store_settings'},loadData)
@@ -182,7 +208,7 @@ export default function App(){
  },[session,loadData])
 
  const active=useMemo(()=>menu.filter(x=>x.active).length,[menu])
- const visibleOrders=useMemo(()=>orders.filter(o=>o.payment_method==='pickup'||o.payment_status==='paid'||o.status==='Cancelado'),[orders])
+ const visibleOrders=useMemo(()=>[...orders.filter(o=>o.payment_method==='pickup'||o.payment_status==='paid'||o.status==='Cancelado'),...tableHistory].sort((a,b)=>new Date(b.paid_at||b.created_at)-new Date(a.paid_at||a.created_at)),[orders,tableHistory])
  const nav=[['Resumen',LayoutDashboard],['Pedidos',ShoppingBag],['Menú',UtensilsCrossed],['Disponibilidad',Flame],['Configuración',Settings]]
 
  if(!supabaseConfigured) return <SetupMissing app="Panel" />
@@ -224,7 +250,7 @@ function DateNavigator({value,onChange}){
 function Dashboard({orders,active,settings,setSection,selectedDate}){
  const [selected,setSelected]=useState(null)
  const validOrders=orders.filter(o=>o.status!=='Cancelado'&&(o.payment_method==='pickup'||o.payment_status==='paid'))
- const sales=validOrders.reduce((s,o)=>s+Number(o.total||0),0)
+ const sales=validOrders.reduce((s,o)=>s+orderPaidTotal(o),0)
  const avg=validOrders.length?sales/validOrders.length:0
  const pending=validOrders.filter(o=>o.status!=='Entregado').length
  return <>
@@ -235,7 +261,7 @@ function Dashboard({orders,active,settings,setSection,selectedDate}){
  </>
 }
 function Stat({icon:I,label,value,note}){return <div className="stat"><i><I/></i><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}
-function OrderRow({o,onClick}){return <div className={`order-row ${onClick?'clickable':''}`} onClick={onClick}><div><b>{o.order_number}</b><span>{o.customer_name}</span></div><p>{itemSummary(o)}</p><span>{pickupShort(o.pickup_label)}</span><strong>{money(o.total)}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>}
+function OrderRow({o,onClick}){return <div className={`order-row ${onClick?'clickable':''}`} onClick={onClick}><div><b>{o.order_number}</b><span>{orderPlace(o)}</span></div><p>{itemSummary(o)}</p><span>{o.is_table_order?`Mesa ${o.table_number}`:pickupShort(o.pickup_label)}</span><strong>{money(orderPaidTotal(o))}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>}
 
 function Orders({orders,onAdvance,selectedDate}){
  const [selected,setSelected]=useState(null)
@@ -262,7 +288,7 @@ function Orders({orders,onAdvance,selectedDate}){
      const rainFees=sales.reduce((sum,o)=>sum+Number(o.rain_delivery_fee||0),0)
      const firstOrderDiscount=sales.reduce((sum,o)=>sum+Number(o.first_order_discount||0),0)
      const cashback=sales.reduce((sum,o)=>sum+Number(o.cashback_used||0),0)
-     const net=sales.reduce((sum,o)=>sum+Number(o.total||0),0)
+     const net=sales.reduce((sum,o)=>sum+orderPaidTotal(o),0)
      const units=sales.reduce((sum,o)=>sum+(o.order_items||[]).reduce((acc,item)=>acc+Number(item.quantity||1),0),0)
      const avg=sales.length?net/sales.length:0
      const uniqueCustomers=new Set(sales.map(o=>String(o.customer_phone||o.customer_name||'').trim().toLowerCase()).filter(Boolean)).size
@@ -290,7 +316,8 @@ function Orders({orders,onAdvance,selectedDate}){
        ['Envíos con lluvia cobrados',csvNumber(rainFees)],
        ['Regalo primer pedido aplicado',csvNumber(firstOrderDiscount)],
        ['Cashback aplicado',csvNumber(cashback)],
-       ['Venta neta',csvNumber(net)],
+       ['Venta neta (incluye propinas)',csvNumber(net)],
+       ['Propinas',csvNumber(sales.reduce((sum,o)=>sum+Number(o.tip_amount||0),0))],
        ['Ticket promedio',csvNumber(avg)],
        ['Unidades vendidas',units],
        ['Clientes únicos',uniqueCustomers],
@@ -318,7 +345,7 @@ function Orders({orders,onAdvance,selectedDate}){
    try{
      const sales=await loadExportData()
      const rows=[[
-       'Pedido','Fecha','Hora','Cliente','Teléfono','Pickup','Método de pago','Estado de pago','Estado del pedido','Subtotal','Envío con lluvia','Regalo primer pedido','Cashback','Total','Unidades','Productos'
+       'Pedido','Fecha','Hora','Cliente','Teléfono','Pickup','Método de pago','Estado de pago','Estado del pedido','Subtotal','Envío con lluvia','Regalo primer pedido','Cashback','Total consumo','Propina','Total pagado','Mesa','Unidades','Productos'
      ]]
      for(const o of sales){
        const created=new Date(o.created_at)
@@ -331,8 +358,8 @@ function Orders({orders,onAdvance,selectedDate}){
          o.order_number,
          created.toLocaleDateString('es-MX'),
          created.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
-         o.customer_name||'',o.customer_phone||'',o.pickup_label||'',paymentLabel(o),o.payment_status==='paid'?'Pagado':'Pendiente',o.status,
-         csvNumber(orderSubtotal(o)),csvNumber(o.rain_delivery_fee),csvNumber(o.first_order_discount),csvNumber(o.cashback_used),csvNumber(o.total),units,products
+         orderPlace(o),o.customer_phone||'',o.pickup_label||'',paymentLabel(o),o.payment_status==='paid'?'Pagado':'Pendiente',o.status,
+         csvNumber(orderSubtotal(o)),csvNumber(o.rain_delivery_fee),csvNumber(o.first_order_discount),csvNumber(o.cashback_used),csvNumber(o.total),csvNumber(o.tip_amount),csvNumber(orderPaidTotal(o)),o.is_table_order?o.table_number:'',units,products
        ])
      }
      downloadCsv(`chinito-registros-${exportStamp(rangeFrom,rangeTo)}.csv`,rows)
@@ -341,7 +368,7 @@ function Orders({orders,onAdvance,selectedDate}){
 
  return <>
   <section className="card">
-   <div className="card-head orders-card-head"><div><span className="eyebrow">PICKUP</span><h2>Pedidos · {dateLabel(selectedDate)}</h2></div></div>
+   <div className="card-head orders-card-head"><div><span className="eyebrow">MOSTRADOR Y MESAS</span><h2>Pedidos · {dateLabel(selectedDate)}</h2></div></div>
    <div className="orders-export-tools">
     <div className="export-range"><label><span>Desde</span><input type="date" value={rangeFrom} onChange={e=>setRangeFrom(e.target.value)}/></label><label><span>Hasta</span><input type="date" value={rangeTo} onChange={e=>setRangeTo(e.target.value)}/></label></div>
     <div className="export-buttons"><button type="button" onClick={downloadKpi} disabled={Boolean(exporting)}><Download size={16}/>{exporting==='kpi'?'Preparando KPI…':'Descargar KPI'}</button><button type="button" className="primary" onClick={downloadRecords} disabled={Boolean(exporting)}><Download size={16}/>{exporting==='records'?'Preparando registros…':'Descargar registros completos'}</button></div>
@@ -359,11 +386,11 @@ function PanelOrderDetails({order,onClose,onAdvance}){
  const canAdvance=Boolean(onAdvance)&&!['Entregado','Cancelado'].includes(order.status)
  return <div className="panel-order-detail-overlay" onMouseDown={onClose}>
   <section className="panel-order-detail-modal" onMouseDown={e=>e.stopPropagation()}>
-   <header><div><span className="eyebrow">{order.order_number}</span><h2>{order.customer_name}</h2><p>{order.customer_phone||'Sin teléfono'} · {pickupShort(order.pickup_label)}</p></div><button onClick={onClose}><X size={20}/></button></header>
+   <header><div><span className="eyebrow">{order.order_number}</span><h2>{orderPlace(order)}</h2><p>{order.is_table_order?'Consumo en mesa':`${order.customer_phone||'Sin teléfono'} · ${pickupShort(order.pickup_label)}`}</p></div><button onClick={onClose}><X size={20}/></button></header>
    <div className="panel-order-detail-body">
-    <div className="panel-order-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)}</b></div><div><span>Fecha</span><b>{new Date(order.created_at).toLocaleString('es-MX')}</b></div></div>{order.payment_status==='paid'&&order.settlement_method&&<section className="panel-payment-record"><h3>Pago registrado</h3><div className="panel-payment-record-grid"><div><span>Método</span><b>{paymentLabel(order)}</b></div>{order.settlement_method==='cash'&&<><div><span>Recibido</span><b>{money(order.cash_received)}</b></div><div><span>Cambio</span><b>{money(order.change_due)}</b></div></>}{order.settlement_method==='card'&&<div><span>Folio tarjeta</span><b>{order.card_folio||'Sin folio'}</b></div>}</div></section>}
+    <div className="panel-order-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)}</b></div><div><span>Fecha</span><b>{new Date(order.paid_at||order.created_at).toLocaleString('es-MX')}</b></div></div>{order.payment_status==='paid'&&order.settlement_method&&<section className="panel-payment-record"><h3>Pago registrado</h3><div className="panel-payment-record-grid"><div><span>Método</span><b>{paymentLabel(order)}</b></div>{order.settlement_method==='cash'&&<><div><span>Recibido</span><b>{money(order.cash_received)}</b></div><div><span>Cambio</span><b>{money(order.change_due)}</b></div></>}{order.settlement_method==='card'&&<div><span>Folio tarjeta</span><b>{order.card_folio||'Sin folio'}</b></div>}{Number(order.tip_amount||0)>0&&<div><span>Propina</span><b>{money(order.tip_amount)}</b></div>}</div></section>}
     <section><h3>Productos</h3><div className="panel-detail-items">{(order.order_items||[]).map((item,index)=><div className="panel-detail-item" key={item.id||index}><div><b>{item.quantity>1?`${item.quantity} × `:''}{item.name}</b>{item.base_name&&<span>Base: {item.base_name}</span>}{Array.isArray(item.guisados)&&item.guisados.length>0&&<span>Guisados: {item.guisados.join(' · ')}</span>}{item.variant&&<span>{item.variant}</span>}{Array.isArray(item.extras)&&item.extras.length>0&&<span>Extras: {item.extras.map(e=>`${Number(e.quantity||1)>1?`${e.quantity}× `:''}${e.name}`).join(', ')}</span>}</div><strong>{money(Number(item.unit_price||0)*Number(item.quantity||1))}</strong></div>)}</div></section>
-    <section className="panel-order-totals"><h3>Desglose</h3><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{Number(order.rain_delivery_fee||0)>0&&<div><span>Envío con lluvia</span><b>+{money(order.rain_delivery_fee)}</b></div>}{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{money(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{money(order.cashback_used)}</b></div>}<div className="total"><span>Total</span><b>{money(order.total)}</b></div></section>
+    <section className="panel-order-totals"><h3>Desglose</h3><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{Number(order.rain_delivery_fee||0)>0&&<div><span>Envío con lluvia</span><b>+{money(order.rain_delivery_fee)}</b></div>}{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{money(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{money(order.cashback_used)}</b></div>}<div className="total"><span>Total consumo</span><b>{money(order.total)}</b></div>{Number(order.tip_amount||0)>0&&<div><span>Propina</span><b>+{money(order.tip_amount)}</b></div>}<div className="total"><span>Total pagado</span><b>{money(orderPaidTotal(order))}</b></div></section>
    </div>
    <footer><button onClick={onClose}>Cerrar</button>{(order.payment_status==='paid'||order.status==='Entregado')&&<button className="ticket-reprint-button" onClick={()=>printSaleTicket(order)}><Printer size={16}/> Reimprimir ticket de venta</button>}{canAdvance&&<button className="primary" onClick={onAdvance}>{order.status==='Listo'&&order.payment_method==='pickup'&&order.payment_status!=='paid'?'Cobrar desde Cocina':order.status==='Listo'?'Marcar entregado':'Marcar listo'}</button>}</footer>
   </section>
