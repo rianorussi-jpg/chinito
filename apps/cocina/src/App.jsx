@@ -542,20 +542,52 @@ export default function App(){
  const tableTabsByNumber=useMemo(()=>new Map(tableTabs.map(tab=>[Number(tab.table_number),tab])),[tableTabs])
  const pendingAppOrders=useMemo(()=>orders.filter(o=>isAppOrder(o)&&!o.kitchen_acknowledged_at&&!isWaitingScheduledOrder(o,clock)),[orders,clock])
  const alertCount=pendingAppOrders.length
+ // Alarma audible para bocinas pequeñas: dos ráfagas de tonos medios con armónicos.
+ // El compresor controla los picos; el volumen final depende de la bocina y del sistema.
  const playOrderAlert=useCallback(()=>{
    const ctx=audioContextRef.current
    if(!ctx||ctx.state!=='running')return
    try{
-     const t=ctx.currentTime
-     for(const [i,freq] of [784,1046,784].entries()){
-       const osc=ctx.createOscillator(),gain=ctx.createGain()
-       osc.type='sine';osc.frequency.value=freq
-       gain.gain.setValueAtTime(0.0001,t+i*0.18)
-       gain.gain.exponentialRampToValueAtTime(0.16,t+i*0.18+0.018)
-       gain.gain.exponentialRampToValueAtTime(0.0001,t+i*0.18+0.15)
-       osc.connect(gain);gain.connect(ctx.destination)
-       osc.start(t+i*0.18);osc.stop(t+i*0.18+0.16)
+     const startAt=ctx.currentTime+0.015
+     const compressor=ctx.createDynamicsCompressor()
+     compressor.threshold.value=-16
+     compressor.knee.value=4
+     compressor.ratio.value=8
+     compressor.attack.value=0.003
+     compressor.release.value=0.12
+     compressor.connect(ctx.destination)
+     // Patrón tipo alarma: frecuencias en la zona de mayor audibilidad de altavoces viejos.
+     // Osciladores de onda cuadrada con una envolvente corta evitan clics y destacan mejor.
+     const notes=[
+       [0.00,880,0.20],[0.25,1175,0.20],[0.50,880,0.20],
+       [0.82,1175,0.24],[1.12,880,0.30],
+     ]
+     for(const [offset,freq,duration] of notes){
+       const at=startAt+offset
+       const osc=ctx.createOscillator()
+       const gain=ctx.createGain()
+       osc.type='square'
+       osc.frequency.setValueAtTime(freq,at)
+       gain.gain.setValueAtTime(0,at)
+       gain.gain.linearRampToValueAtTime(0.72,at+0.012)
+       gain.gain.setValueAtTime(0.72,at+duration-0.025)
+       gain.gain.linearRampToValueAtTime(0,at+duration)
+       osc.connect(gain)
+       gain.connect(compressor)
+       osc.start(at)
+       osc.stop(at+duration+0.005)
      }
+     // Desconectar los nodos al terminar para no acumular conexiones entre alarmas.
+     const lastStop=startAt+1.46
+     const cleanup=()=>{try{compressor.disconnect()}catch(_){}}
+     const tail=ctx.createOscillator()
+     const silent=ctx.createGain()
+     silent.gain.value=0
+     tail.connect(silent)
+     silent.connect(compressor)
+     tail.onended=()=>{tail.disconnect();silent.disconnect();cleanup()}
+     tail.start(lastStop)
+     tail.stop(lastStop+0.01)
    }catch(error){console.warn('No se pudo reproducir el aviso de Cocina',error)}
  },[])
  const enableSound=async()=>{
@@ -570,7 +602,7 @@ export default function App(){
  useEffect(()=>{
    if(!soundChoice||!alertCount)return
    playOrderAlert()
-   const timer=window.setInterval(playOrderAlert,2400)
+   const timer=window.setInterval(playOrderAlert,1900)
    return ()=>window.clearInterval(timer)
  },[soundChoice,alertCount,playOrderAlert])
  useEffect(()=>()=>{if(audioContextRef.current)audioContextRef.current.close().catch(()=>{})},[])
