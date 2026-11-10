@@ -220,6 +220,27 @@ function printTableKitchenTicket(tableNumber,items,openedAt,popup){
   openThermalPrint({order_number:`Mesa ${tableNumber}`},lines,'Comanda mesa',{popup})
 }
 
+function printTablePreBill(tab,popup){
+  const lines=[
+    thermalCenter('CHI-NITO'),
+    thermalCenter('CUENTA MESA'),
+    thermalCenter('POR PAGAR'),
+    thermalRule('='),
+    ...thermalWrap(`MESA: ${tab.table_number}`),
+    ...thermalWrap(`APERTURA: ${thermalDate(tab.opened_at)}`),
+    ...thermalWrap(`IMPRESO: ${thermalDate(new Date().toISOString())}`),
+    thermalRule('='),
+    ...saleProductLines({order_items:tab.table_tab_items||[]}),
+    thermalRule('='),
+    ...thermalPair('TOTAL A PAGAR',thermalMoney(tab.total)),
+    thermalRule('='),
+    '',
+    thermalCenter('GRACIAS'),
+    '', '', ''
+  ]
+  openThermalPrint({order_number:`Mesa ${tab.table_number}`},lines,'Cuenta mesa',{popup})
+}
+
 function printTableSaleTicket(tab,popup){
   const method=tab.payment_method==='cash'?'Efectivo':'Tarjeta'
   const lines=[
@@ -679,7 +700,10 @@ function TableOrderModal({tableNumber,tab,menu,onClose,onUpdated,onPaid}){
          <section className={`table-account-block ${tab?'open':'empty'}`}>
            <div className="table-account-block-head"><div><span>YA COMANDADO</span><h3>{tab?'Cuenta abierta':'Sin cuenta abierta'}</h3><p>{tab?`Abierta ${new Date(tab.opened_at).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`:'Aparecerá aquí después de enviar la primera comanda.'}</p></div><div><small>TOTAL CUENTA</small><strong>${money(currentTotal)}</strong></div></div>
            <div className="table-existing-items table-existing-items-side">{existingItems.length?existingItems.map(item=><KitchenItem key={item.id} item={item}/>):<div className="table-existing-empty"><Check size={20}/><span>Todavía no hay productos comandados.</span></div>}</div>
-           {tab&&currentTotal>0&&<button className="table-charge-button" disabled={cart.length>0} title={cart.length?'Primero agrega e imprime la nueva comanda.':'Cobrar cuenta'} onClick={()=>setPaymentOpen(true)}><Banknote size={19}/> Cobrar cuenta · ${money(currentTotal)}</button>}
+           {tab&&currentTotal>0&&<div className="table-account-actions">
+             <button className="table-charge-button" disabled={cart.length>0} title={cart.length?'Primero agrega e imprime la nueva comanda.':'Cobrar cuenta'} onClick={()=>setPaymentOpen(true)}><Banknote size={19}/> Cobrar cuenta · ${money(currentTotal)}</button>
+             <button className="table-prebill-button" disabled={cart.length>0} title={cart.length?'Primero agrega e imprime la nueva comanda.':'Imprimir cuenta para cobrar'} aria-label="Imprimir cuenta para cobrar" onClick={()=>printTablePreBill(tab)}><Printer size={20}/></button>
+           </div>}
          </section>
        </aside>
      </div>

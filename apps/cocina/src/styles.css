@@ -176,3 +176,11 @@
 @media(max-width:620px){.product-config-product img{width:52px;height:52px}.product-config-product h2{font-size:19px}.product-config-product p{display:none}.product-config-content{padding:10px}.product-config-section{padding:11px}.product-config-footer{align-items:stretch;flex-direction:column}.product-config-footer>div{display:flex;align-items:end;justify-content:space-between}.product-config-footer>button{width:100%}.product-config-footer>div strong{font-size:24px}.product-config-modal .manual-choice-grid,.product-config-modal .manual-extra-grid{grid-template-columns:1fr 1fr}.payment-total-card strong{font-size:38px}.table-side-panel{padding:8px}.table-new-block,.table-account-block{border-radius:15px}.table-order-modal .manual-section{padding:12px}}
 
 .table-account-block .table-charge-button:disabled{opacity:.42;cursor:not-allowed;filter:grayscale(.25)}
+
+/* Acciones de cuenta · cobrar + pre-cobro */
+.table-account-actions{display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:8px;align-items:stretch}
+.table-account-actions .table-charge-button{margin:0}
+.table-prebill-button{border:1px solid #443b38;background:#fff;color:#171313;border-radius:12px;min-width:48px;padding:0;display:grid;place-items:center;cursor:pointer;transition:.15s ease}
+.table-prebill-button:hover{transform:translateY(-1px);background:#f7f1ed}
+.table-prebill-button:disabled{opacity:.42;cursor:not-allowed;filter:grayscale(.25);transform:none}
+@media(max-width:620px){.table-account-actions{grid-template-columns:minmax(0,1fr) 48px}}
