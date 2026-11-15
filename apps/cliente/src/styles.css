@@ -2709,3 +2709,57 @@
 /* Entregas a domicilio */
 
 .address-top-button{border:0;background:#fff2e9;border-radius:14px;padding:9px;font-size:12px;font-weight:800;max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}.delivery-switch{display:flex;gap:9px;margin:14px 0}.delivery-switch button{flex:1;background:#fff;border:1px solid #ddd;border-radius:12px;padding:12px;cursor:pointer;font-weight:700}.delivery-switch button.selected,.tip-buttons button.selected{border-color:#ef161f;background:#fff0ee;color:#b31621}.checkout-address-picker{padding:12px;background:#fff7f1;border-radius:15px}.checkout-address-picker select,.address-fields input,.address-fields select,.address-fields textarea,.tip-custom input{width:100%;padding:11px;border:1px solid #ddd;border-radius:10px;background:white}.address-select{border:1px solid #ef161f;border-radius:12px;padding:12px;background:white}.tip-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.tip-buttons button{border:1px solid #ddd;background:white;border-radius:10px;padding:10px;cursor:pointer}.address-overlay{position:fixed;inset:0;z-index:999;background:#0009;display:grid;place-items:center;padding:12px}.address-dialog{width:min(560px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;padding:22px}.address-dialog header{display:flex;justify-content:space-between;align-items:center}.address-dialog header button{border:0;background:transparent}.address-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.address-fields label{display:grid;gap:5px;font-weight:700;font-size:12px}.address-fields label.wide{grid-column:1/-1}@media(max-width:600px){.address-fields{grid-template-columns:1fr}.address-fields label.wide{grid-column:auto}.address-top-button{font-size:10px}}
+
+/* Refinamiento móvil: cabecera, ubicación y checkout */
+.topbar{display:flex!important;justify-content:space-between;align-items:center;gap:12px;min-height:76px;height:auto;padding-top:12px;padding-bottom:12px;padding-top:max(12px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));}
+.topbar .profile-btn{flex:none;z-index:1}
+.topbar .brand-mini{position:absolute;left:50%;transform:translateX(-50%);max-width:32%;pointer-events:auto}
+.topbar .brand-mini img{max-width:100%;height:42px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0;z-index:2}
+.address-top-wrap{position:relative;min-width:0}
+.address-top-button{display:flex;align-items:center;justify-content:center;gap:5px;max-width:190px;min-height:39px;padding:9px 11px;border-radius:13px;border:1px solid #f5c9c7;background:#fff1ed;color:#ae1520;box-shadow:0 4px 12px rgba(196,30,35,.08);font-size:12px;font-weight:800;cursor:pointer}
+.address-top-button.has-address{background:#fff;border-color:#ecdcd5;color:#241a17}
+.address-top-button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.address-top-button svg{flex:none}
+.address-menu-scrim{position:fixed;inset:0;border:0;background:transparent;z-index:49;cursor:default}
+.address-top-menu{position:absolute;right:0;top:calc(100% + 9px);z-index:50;width:min(330px,calc(100vw - 25px));max-height:min(65dvh,480px);overflow:auto;background:#fff;border:1px solid #f0e3da;box-shadow:0 20px 55px rgba(24,14,12,.22);border-radius:19px;padding:12px}
+.address-menu-heading{display:block;padding:5px 7px 11px;font-size:11px;color:#83736d;font-weight:800}
+.address-menu-option{display:flex;align-items:center;width:100%;gap:10px;padding:12px 10px;background:white;border:1px solid transparent;border-radius:13px;color:#241b18;text-align:left;cursor:pointer}
+.address-menu-option.selected{background:#fff1ee;border-color:#f2d2ca;color:#bd1b24}
+.address-menu-option>span{min-width:0;flex:1}
+.address-menu-option strong,.address-menu-option small{display:block;white-space:normal;overflow-wrap:anywhere}
+.address-menu-option strong{font-size:12px}.address-menu-option small{font-size:10px;margin-top:3px;color:#81716a}
+.address-menu-add{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:1px dashed #ecaaa5;background:#fff8f5;color:#bd1b24;border-radius:13px;padding:13px;font-size:12px;font-weight:800;cursor:pointer;margin-top:7px}
+.checkout-address-picker{border:1px solid #efe0d6;border-radius:18px;background:#fffaf6;padding:14px;margin-top:12px}
+.checkout-address-heading{display:flex;align-items:center;gap:9px;color:#241a16;font-size:13px;margin-bottom:11px}
+.checkout-address-heading svg{color:var(--red)}
+.checkout-address-options{display:grid;gap:9px}
+.checkout-address-card{display:flex;align-items:center;gap:12px;width:100%;padding:13px;border-radius:14px;background:#fff;border:1.5px solid #ece2da;cursor:pointer;text-align:left;color:#211b18}
+.checkout-address-card.selected{border-color:#e93038;background:#fff5f2;box-shadow:0 0 0 2px #ffe8e6}
+.checkout-address-marker{height:36px;width:36px;flex:none;display:grid;place-items:center;background:#f8efea;color:var(--red);border-radius:11px}
+.checkout-address-copy{flex:1;min-width:0}.checkout-address-copy b,.checkout-address-copy small{display:block;overflow-wrap:anywhere}.checkout-address-copy b{font-size:13px}.checkout-address-copy small{font-size:11px;color:#756961;margin-top:4px}
+.checkout-address-radio{display:grid;place-items:center;border:2px solid #d8cbc4;border-radius:50%;height:22px;width:22px;flex:none;color:white}.checkout-address-card.selected .checkout-address-radio{background:var(--red);border-color:var(--red)}
+.checkout-add-address{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:1px dashed #e6aea8;border-radius:12px;background:white;color:#b51c24;font-weight:800;padding:13px;margin-top:12px;cursor:pointer;font-size:12px}
+.address-overlay{position:fixed;inset:0;z-index:9999;background:rgba(20,13,11,.65);display:flex;align-items:center;justify-content:center;padding:24px 14px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));overflow:hidden}
+.address-dialog{display:flex;flex-direction:column;width:min(550px,100%);max-height:min(760px,calc(100dvh - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));overflow-y:auto;overscroll-behavior:contain;background:#fff;border-radius:23px;padding:20px;box-shadow:0 25px 75px #0004}
+.address-dialog>header{position:sticky;top:-20px;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 0 15px;margin:0;background:white;border-bottom:1px solid #f0e6df;flex:none}
+.address-dialog>header h2{font-size:22px;margin:4px 0 0}.address-dialog-eyebrow{font-size:10px;font-weight:900;letter-spacing:.12em;color:var(--red)}
+.address-dialog>header button{display:grid;place-items:center;border:0;background:#f6eee9;border-radius:11px;width:37px;height:37px;flex:none;cursor:pointer}
+.address-dialog .address-fields{overflow:visible;margin:16px 0;gap:11px}
+.address-dialog .address-fields input,.address-dialog .address-fields select,.address-dialog .address-fields textarea{font-size:16px;border:1px solid #e6dcd5;border-radius:12px;background:#fffaf7;min-height:43px}
+.address-dialog .address-fields textarea{min-height:76px;resize:vertical}
+.address-dialog>.primary{width:100%;flex:none}
+@media(max-width:650px){
+ .topbar{min-height:75px;padding-top:calc(14px + env(safe-area-inset-top));padding-bottom:13px;gap:5px}
+ .topbar .profile-btn{width:39px;height:39px}
+ .topbar .brand-mini{max-width:29%}.topbar .brand-mini img{height:37px}
+ .topbar-right{gap:5px}.topbar .order-tracker-button{width:35px;height:35px;flex:none;padding:6px}
+ .address-top-button{max-width:135px;min-height:37px;padding:8px 9px;font-size:10px;gap:4px}
+ .address-top-button svg{width:13px;height:13px}
+ .address-dialog{padding:16px;max-height:calc(100dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom));border-radius:19px}
+ .address-dialog>header{top:-16px}.address-dialog .address-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+ .address-dialog .address-fields label:first-child,.address-dialog .address-fields label:nth-child(2),.address-dialog .address-fields label:nth-child(6),.address-dialog .address-fields label.wide{grid-column:1/-1}
+ .address-dialog .address-fields label{min-width:0}
+ .address-dialog .address-fields input,.address-dialog .address-fields select{min-width:0;width:100%}
+}
+@media(max-width:375px){.topbar .brand-mini{max-width:25%}.topbar .brand-mini img{height:32px}.address-top-button{max-width:115px}}
