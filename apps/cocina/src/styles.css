@@ -221,3 +221,6 @@
 .k-detail-timing strong{font-size:20px;font-variant-numeric:tabular-nums}
 .k-detail-timing small{display:block;color:#766b63;margin-top:8px;font-size:11px}
 @media(max-width:520px){.k-sound-modal{padding:22px}.k-sound-modal>div:last-child{flex-direction:column}}
+
+/* Entregas a domicilio */
+.in-route-board{padding:20px;background:#fff;border-radius:22px;margin:18px 0}.in-route-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}.route-card{background:#f5f0eb;border-radius:16px;padding:16px}.route-card div{display:flex;gap:10px;flex-wrap:wrap}.route-card a,.route-card button{background:#ed1a24;color:white;border:0;border-radius:9px;padding:10px;text-decoration:none;font-weight:700}.table-payment-body select,.table-payment-body input{width:100%;padding:10px;border:1px solid #ccc;border-radius:10px}

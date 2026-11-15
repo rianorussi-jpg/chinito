@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Banknote, Check, ChefHat, Clock3, CloudRain, CreditCard, Eye, Flame, LogOut, Minus, Phone, Plus, Printer, RotateCcw, ShoppingBag, UtensilsCrossed, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,delivered_at,order_source,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='delivery_type,delivery_address,delivery_zone,delivery_fee,requested_payment,courier_id,courier_name,courier_phone,routed_at,id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,delivered_at,order_source,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const tableItemSelect='id,batch_id,item_type,catalog_slug,name,quantity,unit_price,base_name,guisados,extras,variant,created_at'
 const tableTabSelect=`id,table_number,status,total,tip_amount,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,updated_at,table_tab_items(${tableItemSelect})`
-const activeStatuses=['Nuevo','Preparando','Listo']
+const activeStatuses=['Nuevo','Preparando','Listo','En camino']
 const isAppOrder=order=>order?.order_source!=='staff'
 const elapsedSeconds=(from,to)=>from?Math.max(0,Math.floor((new Date(to).getTime()-new Date(from).getTime())/1000)):0
 const elapsedLabel=seconds=>{
@@ -92,6 +92,8 @@ const paymentLabel=order=>{
   if(settled==='cash')return 'Efectivo'
   if(settled==='card')return 'Tarjeta'
   if(settled==='online')return 'Tarjeta en linea'
+  if(order?.requested_payment==='cash')return 'Efectivo al recibir'
+  if(order?.requested_payment==='terminal')return 'Terminal al recibir'
   const method=String(order?.payment_method||'').toLowerCase()
   if(['card','stripe','online','online_card'].includes(method))return 'Tarjeta en linea'
   if(['cash','efectivo'].includes(method))return 'Efectivo'
@@ -175,7 +177,7 @@ function printKitchenTicket(order){
     thermalCenter('TICKET COCINA'),
     thermalRule('='),
     ...thermalWrap(`PEDIDO: ${order.order_number||''}`),
-    ...thermalWrap(`PICKUP: ${displayPickupLabel(order.pickup_label)||'Lo antes posible'}`),
+    ...thermalWrap(order.delivery_type==='delivery'?`DOMICILIO: ${formatDeliveryAddress(order.delivery_address)}`:`PICKUP: ${displayPickupLabel(order.pickup_label)||'Lo antes posible'}`),
     ...thermalWrap(`HORA PEDIDO: ${new Date(order.created_at).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}`),
     thermalRule('='),
     ...kitchenProductLines(order),
@@ -195,19 +197,20 @@ function printSaleTicket(order,popup=null){
   ]
   if(order.customer_phone)lines.push(...thermalWrap(`TEL: ${order.customer_phone}`))
   lines.push(
-    ...thermalWrap(`PICKUP: ${displayPickupLabel(order.pickup_label)||'Lo antes posible'}`),
+    ...thermalWrap(order.delivery_type==='delivery'?`DOMICILIO: ${formatDeliveryAddress(order.delivery_address)}`:`PICKUP: ${displayPickupLabel(order.pickup_label)||'Lo antes posible'}`),
     ...thermalWrap(`PAGO: ${paymentLabel(order)} - ${paymentStatusLabel(order)}`),
     thermalRule('='),
     ...saleProductLines(order),
     thermalRule('='),
     ...thermalPair('SUBTOTAL',thermalMoney(orderSubtotal(order)))
   )
+  if(order.delivery_type==='delivery'){lines.push(...thermalWrap(`ZONA: ${order.delivery_zone||''}`));lines.push(...thermalPair('ENVIO',thermalMoney(order.delivery_fee)));if(order.courier_name)lines.push(...thermalWrap(`REPARTIDOR: ${order.courier_name}`))}
   if(Number(order.rain_delivery_fee||0)>0)lines.push(...thermalPair('ENVIO CON LLUVIA',`+${thermalMoney(order.rain_delivery_fee)}`))
   if(Number(order.first_order_discount||0)>0)lines.push(...thermalPair('REGALO PRIMER PEDIDO',`-${thermalMoney(order.first_order_discount)}`))
   if(Number(order.cashback_used||0)>0)lines.push(...thermalPair('CASHBACK',`-${thermalMoney(order.cashback_used)}`))
   lines.push(...thermalPair('TOTAL CONSUMO',thermalMoney(order.total)))
    if(Number(order.tip_amount||0)>0)lines.push(...thermalPair('PROPINA',`+${thermalMoney(order.tip_amount)}`))
-   lines.push(...thermalPair('TOTAL PAGADO',thermalMoney(Number(order.total||0)+Number(order.tip_amount||0))))
+   lines.push(...thermalPair('TOTAL PAGADO',thermalMoney(Number(order.total||0)+Number(order.tip_amount||0)+Number(order.delivery_fee||0))))
   if(order.settlement_method==='cash'){
     lines.push(...thermalPair('RECIBIDO',thermalMoney(order.cash_received)))
     lines.push(...thermalPair('CAMBIO',thermalMoney(order.change_due)))
@@ -235,17 +238,19 @@ function printOrderPreBill(order){
   ]
   if(order.customer_phone)lines.push(...thermalWrap(`TEL: ${order.customer_phone}`))
   lines.push(
-    ...thermalWrap(`PICKUP: ${displayPickupLabel(order.pickup_label)||'Lo antes posible'}`),
+    ...thermalWrap(order.delivery_type==='delivery'?`DOMICILIO: ${formatDeliveryAddress(order.delivery_address)}`:`PICKUP: ${displayPickupLabel(order.pickup_label)||'Lo antes posible'}`),
     thermalRule('='),
     ...saleProductLines(order),
     thermalRule('='),
     ...thermalPair('SUBTOTAL',thermalMoney(orderSubtotal(order)))
   )
+  if(order.delivery_type==='delivery'){lines.push(...thermalWrap(`ZONA: ${order.delivery_zone||''}`));lines.push(...thermalPair('ENVIO',thermalMoney(order.delivery_fee)));if(order.courier_name)lines.push(...thermalWrap(`REPARTIDOR: ${order.courier_name}`))}
   if(Number(order.rain_delivery_fee||0)>0)lines.push(...thermalPair('ENVIO CON LLUVIA',`+${thermalMoney(order.rain_delivery_fee)}`))
   if(Number(order.first_order_discount||0)>0)lines.push(...thermalPair('REGALO PRIMER PEDIDO',`-${thermalMoney(order.first_order_discount)}`))
   if(Number(order.cashback_used||0)>0)lines.push(...thermalPair('CASHBACK',`-${thermalMoney(order.cashback_used)}`))
   lines.push(
-    ...thermalPair('TOTAL A PAGAR',thermalMoney(order.total)),
+    ...(Number(order.tip_amount||0)>0?thermalPair('PROPINA',thermalMoney(order.tip_amount)):[]),
+    ...thermalPair('TOTAL A PAGAR',thermalMoney(Number(order.total||0)+Number(order.tip_amount||0)+Number(order.delivery_fee||0))),
     thermalRule('='),
     '', '', ''
   )
@@ -352,6 +357,9 @@ export default function App(){
  const [selectedTable,setSelectedTable]=useState(null)
  const [detailOrder,setDetailOrder]=useState(null)
  const [paymentOrder,setPaymentOrder]=useState(null)
+ const [routeOrder,setRouteOrder]=useState(null)
+ const [deliveryComplete,setDeliveryComplete]=useState(null)
+ const [couriers,setCouriers]=useState([])
  const [clock,setClock]=useState(()=>Date.now())
  const [realtimeState,setRealtimeState]=useState(typeof navigator!=='undefined'&&!navigator.onLine?'offline':'connecting')
  const [lastSyncAt,setLastSyncAt]=useState(null)
@@ -406,6 +414,8 @@ export default function App(){
    }
  },[session])
 
+ const loadCouriers=useCallback(async()=>{if(!supabase||!session)return;const {data}=await supabase.from('delivery_couriers').select('*').eq('active',true).order('name');setCouriers(data||[])},[session])
+ useEffect(()=>{loadCouriers()},[loadCouriers])
  const loadMenu=useCallback(async()=>{
    if(!supabase || !session)return
    const {data,error}=await supabase.from('menu_items').select('*').eq('active',true).order('sort_order',{ascending:true})
@@ -539,6 +549,7 @@ export default function App(){
  const scheduledIds=useMemo(()=>new Set(scheduled.map(o=>o.id)),[scheduled])
  const preparing=useMemo(()=>orders.filter(o=>(o.status==='Nuevo'||o.status==='Preparando')&&!scheduledIds.has(o.id)),[orders,scheduledIds])
  const ready=useMemo(()=>orders.filter(o=>o.status==='Listo'),[orders])
+ const inRoute=useMemo(()=>orders.filter(o=>o.status==='En camino'),[orders])
  const tableTabsByNumber=useMemo(()=>new Map(tableTabs.map(tab=>[Number(tab.table_number),tab])),[tableTabs])
  const pendingAppOrders=useMemo(()=>orders.filter(o=>isAppOrder(o)&&!o.kitchen_acknowledged_at&&!isWaitingScheduledOrder(o,clock)),[orders,clock])
  const alertCount=pendingAppOrders.length
@@ -628,6 +639,7 @@ export default function App(){
      window.alert('Primero toca “Enterado” para confirmar que Cocina ya vio este pedido.')
      return
    }
+   if(order.status==='Listo'&&order.delivery_type==='delivery'){setRouteOrder(order);return}
    if(order.status==='Listo'&&order.payment_method==='pickup'&&order.payment_status!=='paid'){
      setPaymentOrder(order)
      return
@@ -659,16 +671,19 @@ export default function App(){
       <OrderLane title="Preparando" subtitle="Todos los pedidos activos en preparación" count={preparing.length} tone="prep">
         {preparing.length?preparing.map(o=><Ticket key={o.id} now={clock} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)} onAdvance={()=>advance(o)}/>):<LaneEmpty icon={<Flame size={34}/>} title="Sin pedidos preparando" text="Los pedidos activos aparecerán aquí automáticamente, aunque sean de días anteriores."/>}
       </OrderLane>
-      <OrderLane title="Listos para recoger" subtitle="Esperando al cliente" count={ready.length} tone="ready">
+      <OrderLane title="Listos" subtitle="Esperando al cliente" count={ready.length} tone="ready">
         {ready.length?ready.map(o=><Ticket key={o.id} now={clock} order={o} onAcknowledge={()=>acknowledge(o)} onDetails={()=>setDetailOrder(o)} onAdvance={()=>advance(o)}/>):<LaneEmpty icon={<Check size={34}/>} title="Nada listo todavía" text="Cuando marques un pedido como listo aparecerá en esta columna."/>}
       </OrderLane>
     </section>
+    {inRoute.length>0&&<section className="in-route-board"><h2>En camino · {inRoute.length}</h2><div className="in-route-grid">{inRoute.map(o=><article key={o.id} className="route-card"><h3>{o.order_number} · {o.customer_name}</h3><p>{o.delivery_zone} · {formatDeliveryAddress(o.delivery_address)}</p><p>Repartidor: {o.courier_name}</p><div><a target="_blank" rel="noreferrer" href={`https://wa.me/${String(o.courier_phone||'').replace(/\D/g,'')}?text=${encodeURIComponent(`Entrega Chi-nito ${o.order_number}\nCliente: ${o.customer_name}\nTel: ${o.customer_phone}\nDirección: ${formatDeliveryAddress(o.delivery_address)}\nColonia: ${o.delivery_zone}`)}`}>Enviar por WhatsApp</a><button onClick={()=>setDeliveryComplete(o)}>Pedido entregado</button></div></article>)}</div></section>}
   </main>
   {detailOrder&&<OrderDetailsModal now={clock} order={detailOrder} onClose={()=>setDetailOrder(null)} onAcknowledge={()=>acknowledge(detailOrder)} onAdvance={()=>advance(detailOrder)}/>}
   {scheduledOpen&&<ScheduledOrdersModal orders={scheduled} now={clock} onClose={()=>setScheduledOpen(false)}/>}
   {newOrderOpen&&<NewOrderModal menu={menu} onClose={()=>setNewOrderOpen(false)} onCreated={()=>{setNewOrderOpen(false);loadOrders()}}/>}
   {selectedTable&&<TableOrderModal tableNumber={selectedTable} tab={tableTabsByNumber.get(Number(selectedTable))||null} menu={menu} onClose={()=>setSelectedTable(null)} onUpdated={()=>loadTables()} onPaid={()=>{setSelectedTable(null);loadTables()}}/>}
   {soundChoice===null&&<div className="k-sound-overlay"><section className="k-sound-modal"><div className="k-sound-icon">🔔</div><h2>¿Activar sonido de pedidos?</h2><p>Los pedidos que lleguen desde la app harán sonar una alerta repetida hasta tocar <b>Enterado</b>. Los pedidos rápidos no generan esa alerta.</p><div><button onClick={()=>setSoundChoice(false)}>Ahora no</button><button className="k-sound-yes" onClick={enableSound}>Activar sonido</button></div></section></div>}
+  {routeOrder&&<RouteModal order={routeOrder} couriers={couriers} onClose={()=>setRouteOrder(null)} onDone={()=>{setRouteOrder(null);setDetailOrder(null);loadOrders({silent:true})}}/>}
+  {deliveryComplete&&<DeliveryCompleteModal order={deliveryComplete} onClose={()=>setDeliveryComplete(null)} onDone={()=>{setDeliveryComplete(null);loadOrders({silent:true})}}/>}
   {paymentOrder&&<OrderPaymentModal order={paymentOrder} onClose={()=>setPaymentOrder(null)} onConfirmed={receipt=>{setPaymentOrder(null);setDetailOrder(null);setOrders(prev=>prev.filter(o=>o.id!==receipt.id));loadOrders({silent:true})}}/>}
  </div>
 }
@@ -762,8 +777,8 @@ function OrderPaymentModal({order,onClose,onConfirmed}){
  const [method,setMethod]=useState('cash')
  const [cashReceived,setCashReceived]=useState('')
  const [folio,setFolio]=useState('')
- const [tipMode,setTipMode]=useState('0')
- const [customTip,setCustomTip]=useState('')
+ const [tipMode,setTipMode]=useState(Number(order?.tip_amount||0)>0?'custom':'0')
+ const [customTip,setCustomTip]=useState(Number(order?.tip_amount||0)>0?String(order.tip_amount):'')
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const total=Number(order?.total||0)
@@ -966,7 +981,7 @@ function Ticket({order,now,onAcknowledge,onDetails,onAdvance}){
    </div>
 
    <button className={`compact-ticket-advance ${isReady?'deliver':''}`} onClick={onAdvance}>
-     {isReady?<Check size={18}/>:<Flame size={18}/>} {isReady?'Entregar pedido':'Marcar listo'}
+     {isReady?<Check size={18}/>:<Flame size={18}/>} {isReady?(order.delivery_type==='delivery'?'Sale a ruta':'Entregar pedido'):'Marcar listo'}
    </button>
  </article>
 }
@@ -987,7 +1002,7 @@ function OrderDetailsModal({order,now,onClose,onAcknowledge,onAdvance}){
        {!acknowledged&&<button className="acknowledge-detail" onClick={onAcknowledge}><Check size={17}/> Enterado</button>}
        <button onClick={()=>printKitchenTicket(order)}><Printer size={17}/> Ticket cocina</button>
        <button onClick={()=>printOrderPreBill(order)}><Printer size={17}/> Ticket por cobrar</button>
-       <button className="advance-detail" onClick={onAdvance}>{order.status==='Listo'?<Check size={17}/>:<Flame size={17}/>} {order.status==='Listo'?'Entregar pedido':'Marcar como listo'}</button>
+       <button className="advance-detail" onClick={onAdvance}>{order.status==='Listo'?<Check size={17}/>:<Flame size={17}/>} {order.status==='Listo'?(order.delivery_type==='delivery'?'Sale a ruta':'Entregar pedido'):'Marcar como listo'}</button>
      </footer>
    </section>
  </div>
@@ -1082,3 +1097,16 @@ function KitchenLogin({error}){
  return <div className="k-auth"><form className="k-auth-card" onSubmit={login}><img src="/logo.jpg" alt="Chi-nito"/><span className="eyebrow">ACCESO DE PERSONAL</span><h1>Kitchen Mode</h1><label>Correo<input type="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Contraseña<input type="password" required value={password} onChange={e=>setPassword(e.target.value)}/></label>{message&&<p className="k-auth-error">{message}</p>}<button disabled={busy}>{busy?'Entrando…':'Entrar a cocina'}</button></form></div>
 }
 function SetupMissing(){return <div className="k-auth"><div className="k-auth-card"><img src="/logo.jpg" alt="Chi-nito"/><h1>Kitchen Mode</h1><p>Faltan <b>VITE_SUPABASE_URL</b> y <b>VITE_SUPABASE_ANON_KEY</b> en Vercel.</p></div></div>}
+
+const formatDeliveryAddress=a=>a?`${a.street||''} ${a.exterior_number||''}${a.interior_number?`, Int. ${a.interior_number}`:''}, ${a.postal_code||''}${a.references?` · ${a.references}`:''}`:'Sin dirección'
+function RouteModal({order,couriers,onClose,onDone}){
+ const [courierId,setCourierId]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ const send=async()=>{if(!courierId){setError('Selecciona un repartidor.');return}const courier=couriers.find(c=>c.id===courierId);const popup=reserveThermalPrint();setBusy(true);const {error:err}=await supabase.rpc('dispatch_delivery_order',{p_order_id:order.id,p_courier_id:courierId});setBusy(false);if(err){popup?.close();setError(err.message);return}printSaleTicket({...order,courier_name:courier.name,courier_phone:courier.phone,status:'En camino'},popup);onDone()}
+ return <div className="table-payment-overlay"><section className="table-payment-modal"><header><h2>Sale a ruta · {order.order_number}</h2><button onClick={onClose}><X/></button></header><div className="table-payment-body"><p>{formatDeliveryAddress(order.delivery_address)} · {order.delivery_zone}</p><label>Repartidor<select value={courierId} onChange={e=>setCourierId(e.target.value)}><option value="">Seleccionar</option>{couriers.map(c=><option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}</select></label>{error&&<p>{error}</p>}<button className="advance" disabled={busy} onClick={send}>Confirmar salida e imprimir ticket</button></div></section></div>
+}
+function DeliveryCompleteModal({order,onClose,onDone}){
+ const method=order.requested_payment||'cash';const [folio,setFolio]=useState(''),[cash,setCash]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ const amount=Number(order.total||0)+Number(order.tip_amount||0)+Number(order.delivery_fee||0)
+ const done=async()=>{setError('');if(method==='terminal'&&!folio.trim()){setError('Captura el folio de la terminal.');return}if(method==='cash'&&Number(cash)<amount){setError('El efectivo recibido es menor al total.');return}setBusy(true);const {error:err}=await supabase.rpc('complete_delivery_order',{p_order_id:order.id,p_folio:method==='terminal'?folio:null,p_cash_received:method==='cash'?Number(cash):null});setBusy(false);if(err){setError(err.message);return}onDone()}
+ return <div className="table-payment-overlay"><section className="table-payment-modal"><header><h2>Pedido entregado · {order.order_number}</h2><button onClick={onClose}><X/></button></header><div className="table-payment-body"><p>Total con envío y propina: <b>{thermalMoney(amount)}</b></p>{method==='terminal'&&<label>Folio terminal<input value={folio} onChange={e=>setFolio(e.target.value)}/></label>}{method==='cash'&&<><label>Efectivo recibido<input type="number" min={amount} value={cash} onChange={e=>setCash(e.target.value)}/></label><p>Cambio: {thermalMoney(Math.max(0,Number(cash||0)-amount))}</p></>}{method==='online'&&<p>Pagado en línea. Solo confirma la entrega.</p>}{error&&<p>{error}</p>}<button className="advance" disabled={busy} onClick={done}>Confirmar entrega</button></div></section></div>
+}

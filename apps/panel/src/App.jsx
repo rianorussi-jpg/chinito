@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Printer, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, Trash2, X, ImagePlus } from 'lucide-react'
+import { BarChart3, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Flame, LayoutDashboard, LogOut, PackageOpen, Printer, Search, Settings, ShoppingBag, ToggleLeft, ToggleRight, UtensilsCrossed, Plus, Pencil, Trash2, X, ImagePlus, Truck } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 
-const orderSelect='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,delivered_at,order_source,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const orderSelect='delivery_type,delivery_address,delivery_zone,delivery_fee,requested_payment,courier_id,courier_name,courier_phone,routed_at,id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,settlement_method,total,status,cashback_used,first_order_discount,rain_delivery_fee,tip_amount,cash_received,change_due,card_folio,paid_at,kitchen_acknowledged_at,delivered_at,order_source,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 
 const tableTabSelect='id,table_number,status,total,tip_amount,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,table_tab_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const tableToOrder=(tab)=>({
@@ -15,7 +15,7 @@ const tableToOrder=(tab)=>({
  created_at:tab.opened_at,paid_at:tab.closed_at,
  order_items:tab.table_tab_items||[]
 })
-const orderPaidTotal=o=>Number(o.total||0)+Number(o.tip_amount||0)
+const orderPaidTotal=o=>Number(o.total||0)+Number(o.tip_amount||0)+Number(o.delivery_fee||0)
 const orderPlace=o=>o.is_table_order?`Mesa ${o.table_number}`:(o.customer_name||'Mostrador')
 const trackedAppOrder=o=>!o.is_table_order&&o.order_source!=='staff'
 const durationSeconds=(start,end)=>start&&end?Math.max(0,Math.floor((new Date(end)-new Date(start))/1000)):null
@@ -35,6 +35,8 @@ const paymentLabel=(o)=>{
  if(settled==='cash')return 'Pagado en efectivo'
  if(settled==='card')return 'Pagado con tarjeta'
  if(settled==='online')return 'Pagado en línea'
+ if(o?.requested_payment==='terminal')return o?.payment_status==='paid'?'Terminal':'Terminal al recibir'
+ if(o?.requested_payment==='cash')return o?.payment_status==='paid'?'Efectivo':'Efectivo al recibir'
  if(o?.payment_method==='online')return o?.payment_status==='paid'?'Pagado en línea':'Pago en línea'
  return o?.payment_status==='paid'?'Pagado al recoger':'Pago al recoger'
 }
@@ -95,6 +97,7 @@ const printSaleTicket=(order)=>{
  const lines=[thermalCenter('CHI-NITO'),thermalCenter('TICKET DE VENTA'),thermalRule('='),...thermalWrap(`PEDIDO: ${order.order_number||''}`),...thermalWrap(`FECHA: ${thermalDate(order.paid_at||order.created_at)}`),...thermalWrap(`${order.is_table_order?'MESA':'CLIENTE'}: ${orderPlace(order)}`)]
  if(order.customer_phone)lines.push(...thermalWrap(`TEL: ${order.customer_phone}`))
  lines.push(...thermalWrap(`PICKUP: ${order.pickup_label||'Lo antes posible'}`),...thermalWrap(`PAGO: ${paymentLabel(order).toUpperCase()} - ${order.payment_status==='paid'?'PAGADO':'PENDIENTE'}`),thermalRule('='),...saleProductLines(order),thermalRule('='),...thermalPair('SUBTOTAL',thermalMoney(orderSubtotal(order))))
+ if(order.delivery_type==='delivery'){lines.push(...thermalWrap(`DOMICILIO: ${order.delivery_zone||''}`));lines.push(...thermalWrap(`${order.delivery_address?.street||''} ${order.delivery_address?.exterior_number||''}`));lines.push(...thermalPair('ENVIO',thermalMoney(order.delivery_fee)));if(order.courier_name)lines.push(...thermalWrap(`REPARTIDOR: ${order.courier_name}`))}
  if(Number(order.rain_delivery_fee||0)>0)lines.push(...thermalPair('ENVIO CON LLUVIA',`+${thermalMoney(order.rain_delivery_fee)}`))
  if(Number(order.first_order_discount||0)>0)lines.push(...thermalPair('REGALO PRIMER PEDIDO',`-${thermalMoney(order.first_order_discount)}`))
  if(Number(order.cashback_used||0)>0)lines.push(...thermalPair('CASHBACK',`-${thermalMoney(order.cashback_used)}`))
@@ -217,24 +220,26 @@ export default function App(){
 
  const active=useMemo(()=>menu.filter(x=>x.active).length,[menu])
  const visibleOrders=useMemo(()=>[...orders.filter(o=>o.payment_method==='pickup'||o.payment_status==='paid'||o.status==='Cancelado'),...tableHistory].sort((a,b)=>new Date(b.paid_at||b.created_at)-new Date(a.paid_at||a.created_at)),[orders,tableHistory])
- const nav=[['Resumen',LayoutDashboard],['Pedidos',ShoppingBag],['Menú',UtensilsCrossed],['Disponibilidad',Flame],['Configuración',Settings]]
+ const nav=[['Resumen',LayoutDashboard],['Pedidos',ShoppingBag],['Menú',UtensilsCrossed],['Disponibilidad',Flame],['Repartidores',Truck],['Configuración',Settings]]
 
  if(!supabaseConfigured) return <SetupMissing app="Panel" />
  if(!authReady) return <div className="auth-screen"><div className="auth-card"><p>Conectando con Supabase…</p></div></div>
  if(!session) return <StaffLogin title="Panel de administración" error={authError} />
 
  return <div className="admin-shell">
-  <aside><div className="logo-wrap"><img src="/logo.jpg" alt="Chi-nito"/><div><b>CHI-NITO</b><span>Panel</span></div></div><nav>{nav.map(([n,I])=><button key={n} onClick={()=>setSection(n)} className={section===n?'active':''}><I size={19}/>{n}</button>)}</nav><div className="aside-foot"><span>Sucursal</span><b>{settings?.store_name||'Chi-nito Centro'}</b><small>Solo pickup</small><button className="logout-btn" onClick={()=>supabase.auth.signOut()}><LogOut size={15}/> Cerrar sesión</button></div></aside>
+  <aside><div className="logo-wrap"><img src="/logo.jpg" alt="Chi-nito"/><div><b>CHI-NITO</b><span>Panel</span></div></div><nav>{nav.map(([n,I])=><button key={n} onClick={()=>setSection(n)} className={section===n?'active':''}><I size={19}/>{n}</button>)}</nav><div className="aside-foot"><span>Sucursal</span><b>{settings?.store_name||'Chi-nito Centro'}</b><small>Pickup y domicilio</small><button className="logout-btn" onClick={()=>supabase.auth.signOut()}><LogOut size={15}/> Cerrar sesión</button></div></aside>
   <main><header><div><span className="eyebrow">ADMINISTRACIÓN</span><h1>{section}</h1></div><div className="panel-header-actions">{['Resumen','Pedidos'].includes(section)&&<DateNavigator value={selectedDate} onChange={setSelectedDate}/>}<div className="live"><i/> {loading?'Actualizando…':'Supabase conectado'}</div></div></header>
    {section==='Resumen'&&<Dashboard orders={visibleOrders} active={active} settings={settings} setSection={setSection} selectedDate={selectedDate}/>} 
    {section==='Pedidos'&&<Orders orders={visibleOrders} onAdvance={advanceOrder} selectedDate={selectedDate}/>} 
    {section==='Menú'&&<Menu menu={menu} q={q} setQ={setQ} onToggle={toggleMenu} onSaved={loadData}/>} 
    {section==='Disponibilidad'&&<Availability menu={menu} onToggle={toggleMenu}/>} 
+   {section==='Repartidores'&&<DeliveryAdmin/>}
    {section==='Configuración'&&<SettingsPage settings={settings} setSettings={setSettings}/>} 
   </main>
  </div>
 
  async function advanceOrder(order){
+   if(order.delivery_type==='delivery'&&['Listo','En camino'].includes(order.status)){window.alert('Las entregas a domicilio se despachan y cobran desde Cocina.');return}
    if(order.payment_method==='online'&&order.payment_status!=='paid') return
    if(order.status==='Listo'&&order.payment_method==='pickup'&&order.payment_status!=='paid'){window.alert('Este pedido debe cobrarse y entregarse desde Cocina para registrar efectivo/tarjeta, cambio o folio.');return}
    const next=(order.status==='Nuevo'||order.status==='Preparando')?'Listo':order.status==='Listo'?'Entregado':order.status
@@ -258,7 +263,7 @@ function DateNavigator({value,onChange}){
 function Dashboard({orders,active,settings,setSection,selectedDate}){
  const [selected,setSelected]=useState(null)
  const validOrders=orders.filter(o=>o.status!=='Cancelado'&&(o.payment_method==='pickup'||o.payment_status==='paid'))
- const sales=validOrders.reduce((s,o)=>s+orderPaidTotal(o),0)
+ const sales=validOrders.reduce((s,o)=>s+Number(o.total||0),0)
  const avg=validOrders.length?sales/validOrders.length:0
  const pending=validOrders.filter(o=>o.status!=='Entregado').length
  return <>
@@ -269,7 +274,7 @@ function Dashboard({orders,active,settings,setSection,selectedDate}){
  </>
 }
 function Stat({icon:I,label,value,note}){return <div className="stat"><i><I/></i><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}
-function OrderRow({o,onClick}){return <div className={`order-row ${onClick?'clickable':''}`} onClick={onClick}><div><b>{o.order_number}</b><span>{orderPlace(o)}</span></div><p>{itemSummary(o)}</p><span>{o.is_table_order?`Mesa ${o.table_number}`:pickupShort(o.pickup_label)}</span><strong>{money(orderPaidTotal(o))}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>}
+function OrderRow({o,onClick}){return <div className={`order-row ${onClick?'clickable':''}`} onClick={onClick}><div><b>{o.order_number}</b><span>{orderPlace(o)}</span></div><p>{itemSummary(o)}</p><span>{o.delivery_type==='delivery'?`Domicilio · ${o.delivery_zone}`:o.is_table_order?`Mesa ${o.table_number}`:pickupShort(o.pickup_label)}</span><strong>{money(orderPaidTotal(o))}</strong><em className={`status ${o.status.toLowerCase()}`}>{o.status}</em></div>}
 
 function Orders({orders,onAdvance,selectedDate}){
  const [selected,setSelected]=useState(null)
@@ -296,7 +301,7 @@ function Orders({orders,onAdvance,selectedDate}){
      const rainFees=sales.reduce((sum,o)=>sum+Number(o.rain_delivery_fee||0),0)
      const firstOrderDiscount=sales.reduce((sum,o)=>sum+Number(o.first_order_discount||0),0)
      const cashback=sales.reduce((sum,o)=>sum+Number(o.cashback_used||0),0)
-     const net=sales.reduce((sum,o)=>sum+orderPaidTotal(o),0)
+     const net=sales.reduce((sum,o)=>sum+Number(o.total||0),0)
      const units=sales.reduce((sum,o)=>sum+(o.order_items||[]).reduce((acc,item)=>acc+Number(item.quantity||1),0),0)
      const avg=sales.length?net/sales.length:0
      const uniqueCustomers=new Set(sales.map(o=>String(o.customer_phone||o.customer_name||'').trim().toLowerCase()).filter(Boolean)).size
@@ -324,7 +329,8 @@ function Orders({orders,onAdvance,selectedDate}){
        ['Envíos con lluvia cobrados',csvNumber(rainFees)],
        ['Regalo primer pedido aplicado',csvNumber(firstOrderDiscount)],
        ['Cashback aplicado',csvNumber(cashback)],
-       ['Venta neta (incluye propinas)',csvNumber(net)],
+       ['Venta neta (sin propinas ni envíos)',csvNumber(net)],
+       ['Envíos a domicilio',csvNumber(sales.reduce((sum,o)=>sum+Number(o.delivery_fee||0),0))],
        ['Propinas',csvNumber(sales.reduce((sum,o)=>sum+Number(o.tip_amount||0),0))],
        ['Ticket promedio',csvNumber(avg)],
        ['Unidades vendidas',units],
@@ -353,7 +359,7 @@ function Orders({orders,onAdvance,selectedDate}){
    try{
      const sales=await loadExportData()
      const rows=[[
-       'Pedido','Fecha','Hora','Cliente','Teléfono','Pickup','Método de pago','Estado de pago','Estado del pedido','Subtotal','Envío con lluvia','Regalo primer pedido','Cashback','Total consumo','Propina','Total pagado','Mesa','Unidades','Productos'
+       'Pedido','Fecha','Hora','Cliente','Teléfono','Pickup','Método de pago','Estado de pago','Estado del pedido','Subtotal','Envío con lluvia','Regalo primer pedido','Cashback','Total consumo','Propina','Total pagado','Mesa','Unidades','Productos','Modalidad','Colonia','Dirección','Envío domicilio','Repartidor'
      ]]
      for(const o of sales){
        const created=new Date(o.created_at)
@@ -367,7 +373,7 @@ function Orders({orders,onAdvance,selectedDate}){
          created.toLocaleDateString('es-MX'),
          created.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
          orderPlace(o),o.customer_phone||'',o.pickup_label||'',paymentLabel(o),o.payment_status==='paid'?'Pagado':'Pendiente',o.status,
-         csvNumber(orderSubtotal(o)),csvNumber(o.rain_delivery_fee),csvNumber(o.first_order_discount),csvNumber(o.cashback_used),csvNumber(o.total),csvNumber(o.tip_amount),csvNumber(orderPaidTotal(o)),o.is_table_order?o.table_number:'',units,products
+         csvNumber(orderSubtotal(o)),csvNumber(o.rain_delivery_fee),csvNumber(o.first_order_discount),csvNumber(o.cashback_used),csvNumber(o.total),csvNumber(o.tip_amount),csvNumber(orderPaidTotal(o)),o.is_table_order?o.table_number:'',units,products,o.delivery_type==='delivery'?'Domicilio':'Pickup',o.delivery_zone||'',o.delivery_address?`${o.delivery_address.street||''} ${o.delivery_address.exterior_number||''}, int ${o.delivery_address.interior_number||''}, CP ${o.delivery_address.postal_code||''}, ${o.delivery_address.references||''}`:'',csvNumber(o.delivery_fee),o.courier_name||''
        ])
      }
      downloadCsv(`chinito-registros-${exportStamp(rangeFrom,rangeTo)}.csv`,rows)
@@ -391,15 +397,15 @@ function Orders({orders,onAdvance,selectedDate}){
 
 function PanelOrderDetails({order,onClose,onAdvance}){
  const subtotal=orderSubtotal(order)
- const canAdvance=Boolean(onAdvance)&&!['Entregado','Cancelado'].includes(order.status)
+ const canAdvance=Boolean(onAdvance)&&!['Entregado','Cancelado','En camino'].includes(order.status)&&!(order.delivery_type==='delivery'&&order.status==='Listo')
  return <div className="panel-order-detail-overlay" onMouseDown={onClose}>
   <section className="panel-order-detail-modal" onMouseDown={e=>e.stopPropagation()}>
    <header><div><span className="eyebrow">{order.order_number}</span><h2>{orderPlace(order)}</h2><p>{order.is_table_order?'Consumo en mesa':`${order.customer_phone||'Sin teléfono'} · ${pickupShort(order.pickup_label)}`}</p></div><button onClick={onClose}><X size={20}/></button></header>
    <div className="panel-order-detail-body">
-    <div className="panel-order-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)}</b></div><div><span>Fecha</span><b>{new Date(order.paid_at||order.created_at).toLocaleString('es-MX')}</b></div></div>{order.payment_status==='paid'&&order.settlement_method&&<section className="panel-payment-record"><h3>Pago registrado</h3><div className="panel-payment-record-grid"><div><span>Método</span><b>{paymentLabel(order)}</b></div>{order.settlement_method==='cash'&&<><div><span>Recibido</span><b>{money(order.cash_received)}</b></div><div><span>Cambio</span><b>{money(order.change_due)}</b></div></>}{order.settlement_method==='card'&&<div><span>Folio tarjeta</span><b>{order.card_folio||'Sin folio'}</b></div>}{Number(order.tip_amount||0)>0&&<div><span>Propina</span><b>{money(order.tip_amount)}</b></div>}</div></section>}
+    {order.delivery_type==='delivery'&&<section><h3>Entrega a domicilio</h3><p>{order.delivery_zone} · {order.delivery_address?.street} {order.delivery_address?.exterior_number}, Int. {order.delivery_address?.interior_number||'—'}, CP {order.delivery_address?.postal_code}</p><p>Referencias: {order.delivery_address?.references||'Sin referencias'}</p><p>Repartidor: {order.courier_name||'Por asignar'} · {order.courier_phone||''}</p><p>Método: {paymentLabel(order)}</p></section>}<div className="panel-order-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)}</b></div><div><span>Fecha</span><b>{new Date(order.paid_at||order.created_at).toLocaleString('es-MX')}</b></div></div>{order.payment_status==='paid'&&order.settlement_method&&<section className="panel-payment-record"><h3>Pago registrado</h3><div className="panel-payment-record-grid"><div><span>Método</span><b>{paymentLabel(order)}</b></div>{order.settlement_method==='cash'&&<><div><span>Recibido</span><b>{money(order.cash_received)}</b></div><div><span>Cambio</span><b>{money(order.change_due)}</b></div></>}{order.settlement_method==='card'&&<div><span>Folio tarjeta</span><b>{order.card_folio||'Sin folio'}</b></div>}{Number(order.tip_amount||0)>0&&<div><span>Propina</span><b>{money(order.tip_amount)}</b></div>}</div></section>}
     {trackedAppOrder(order)&&<section className="panel-timing-section"><h3>Tiempos de atención</h3><div className="panel-timing-grid"><div><span>Hasta Enterado</span><b>{durationLabel(durationSeconds(order.created_at,order.kitchen_acknowledged_at))}</b>{order.kitchen_acknowledged_at&&<small>{new Date(order.kitchen_acknowledged_at).toLocaleTimeString('es-MX')}</small>}</div><div><span>Tiempo total hasta Entregado</span><b>{durationLabel(durationSeconds(order.created_at,order.delivered_at))}</b>{order.delivered_at&&<small>{new Date(order.delivered_at).toLocaleTimeString('es-MX')}</small>}</div></div></section>}
     <section><h3>Productos</h3><div className="panel-detail-items">{(order.order_items||[]).map((item,index)=><div className="panel-detail-item" key={item.id||index}><div><b>{item.quantity>1?`${item.quantity} × `:''}{item.name}</b>{item.base_name&&<span>Base: {item.base_name}</span>}{Array.isArray(item.guisados)&&item.guisados.length>0&&<span>Guisados: {item.guisados.join(' · ')}</span>}{item.variant&&<span>{item.variant}</span>}{Array.isArray(item.extras)&&item.extras.length>0&&<span>Extras: {item.extras.map(e=>`${Number(e.quantity||1)>1?`${e.quantity}× `:''}${e.name}`).join(', ')}</span>}</div><strong>{money(Number(item.unit_price||0)*Number(item.quantity||1))}</strong></div>)}</div></section>
-    <section className="panel-order-totals"><h3>Desglose</h3><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{Number(order.rain_delivery_fee||0)>0&&<div><span>Envío con lluvia</span><b>+{money(order.rain_delivery_fee)}</b></div>}{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{money(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{money(order.cashback_used)}</b></div>}<div className="total"><span>Total consumo</span><b>{money(order.total)}</b></div>{Number(order.tip_amount||0)>0&&<div><span>Propina</span><b>+{money(order.tip_amount)}</b></div>}<div className="total"><span>Total pagado</span><b>{money(orderPaidTotal(order))}</b></div></section>
+    <section className="panel-order-totals"><h3>Desglose</h3><div><span>Subtotal</span><b>{money(subtotal)}</b></div>{Number(order.rain_delivery_fee||0)>0&&<div><span>Envío con lluvia</span><b>+{money(order.rain_delivery_fee)}</b></div>}{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{money(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{money(order.cashback_used)}</b></div>}{order.delivery_type==='delivery'&&<div><span>Envío {order.delivery_zone}</span><b>+{money(order.delivery_fee)}</b></div>}<div className="total"><span>Total consumo</span><b>{money(order.total)}</b></div>{Number(order.tip_amount||0)>0&&<div><span>Propina</span><b>+{money(order.tip_amount)}</b></div>}<div className="total"><span>Total pagado</span><b>{money(orderPaidTotal(order))}</b></div></section>
    </div>
    <footer><button onClick={onClose}>Cerrar</button>{(order.payment_status==='paid'||order.status==='Entregado')&&<button className="ticket-reprint-button" onClick={()=>printSaleTicket(order)}><Printer size={16}/> Reimprimir ticket de venta</button>}{canAdvance&&<button className="primary" onClick={onAdvance}>{order.status==='Listo'&&order.payment_method==='pickup'&&order.payment_status!=='paid'?'Cobrar desde Cocina':order.status==='Listo'?'Marcar entregado':'Marcar listo'}</button>}</footer>
   </section>
@@ -537,7 +543,7 @@ function SettingsPage({settings,setSettings}){
  const [draft,setDraft]=useState(settings||{store_name:'Chi-nito Centro',store_open:true,pickup_enabled:true,opening_time:'11:00 a.m.',closing_time:'9:00 p.m.'})
  useEffect(()=>{if(settings)setDraft(settings)},[settings])
  const save=async()=>{const {data,error}=await supabase.from('store_settings').update({store_name:draft.store_name,store_open:draft.store_open,pickup_enabled:draft.pickup_enabled,opening_time:draft.opening_time,closing_time:draft.closing_time}).eq('id',1).select().single(); if(!error)setSettings(data)}
- return <div className="two-col"><section className="card"><span className="eyebrow">SUCURSAL</span><h2>Datos generales</h2><label>Nombre<input value={draft.store_name||''} onChange={e=>setDraft({...draft,store_name:e.target.value})}/></label><label>Modalidad<input value="Solo pickup" disabled/></label><label>Horario de apertura<input value={draft.opening_time||''} onChange={e=>setDraft({...draft,opening_time:e.target.value})}/></label><label>Horario de cierre<input value={draft.closing_time||''} onChange={e=>setDraft({...draft,closing_time:e.target.value})}/></label><button className="primary" onClick={save}>Guardar cambios</button></section><section className="card"><span className="eyebrow">OPERACIÓN</span><h2>Estado de la tienda</h2><button className={`setting-toggle ${draft.store_open?'enabled':''}`} onClick={()=>setDraft({...draft,store_open:!draft.store_open})}><div><b>Tienda {draft.store_open?'abierta':'cerrada'}</b><span>Controla el estado operativo</span></div>{draft.store_open?<ToggleRight/>:<ToggleLeft/>}</button><button className={`setting-toggle ${draft.pickup_enabled?'enabled':''}`} onClick={()=>setDraft({...draft,pickup_enabled:!draft.pickup_enabled})}><div><b>Pickup {draft.pickup_enabled?'habilitado':'deshabilitado'}</b><span>Única modalidad de Chi-nito</span></div>{draft.pickup_enabled?<ToggleRight/>:<ToggleLeft/>}</button></section></div>
+ return <div className="two-col"><section className="card"><span className="eyebrow">SUCURSAL</span><h2>Datos generales</h2><label>Nombre<input value={draft.store_name||''} onChange={e=>setDraft({...draft,store_name:e.target.value})}/></label><label>Modalidad<input value="Pickup y domicilio" disabled/></label><label>Horario de apertura<input value={draft.opening_time||''} onChange={e=>setDraft({...draft,opening_time:e.target.value})}/></label><label>Horario de cierre<input value={draft.closing_time||''} onChange={e=>setDraft({...draft,closing_time:e.target.value})}/></label><button className="primary" onClick={save}>Guardar cambios</button></section><section className="card"><span className="eyebrow">OPERACIÓN</span><h2>Estado de la tienda</h2><button className={`setting-toggle ${draft.store_open?'enabled':''}`} onClick={()=>setDraft({...draft,store_open:!draft.store_open})}><div><b>Tienda {draft.store_open?'abierta':'cerrada'}</b><span>Controla el estado operativo</span></div>{draft.store_open?<ToggleRight/>:<ToggleLeft/>}</button><button className={`setting-toggle ${draft.pickup_enabled?'enabled':''}`} onClick={()=>setDraft({...draft,pickup_enabled:!draft.pickup_enabled})}><div><b>Pickup {draft.pickup_enabled?'habilitado':'deshabilitado'}</b><span>Controla la opción de recoger en sucursal</span></div>{draft.pickup_enabled?<ToggleRight/>:<ToggleLeft/>}</button></section></div>
 }
 
 function StaffLogin({title,error}){
@@ -547,3 +553,14 @@ function StaffLogin({title,error}){
  return <div className="auth-screen"><form className="auth-card" onSubmit={login}><img src="/logo.jpg" alt="Chi-nito"/><span className="eyebrow">ACCESO DE PERSONAL</span><h1>{title}</h1><label>Correo<input type="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Contraseña<input type="password" required value={password} onChange={e=>setPassword(e.target.value)}/></label>{message&&<p className="auth-error">{message}</p>}<button className="primary auth-submit" disabled={busy}>{busy?'Entrando…':'Iniciar sesión'}</button></form></div>
 }
 function SetupMissing({app}){return <div className="auth-screen"><div className="auth-card"><img src="/logo.jpg" alt="Chi-nito"/><h1>{app}</h1><p>Faltan <b>VITE_SUPABASE_URL</b> y <b>VITE_SUPABASE_ANON_KEY</b> en Vercel.</p></div></div>}
+
+function DeliveryAdmin(){
+ const [zones,setZones]=useState([]),[couriers,setCouriers]=useState([]),[zoneName,setZoneName]=useState(''),[zoneFee,setZoneFee]=useState(''),[courierName,setCourierName]=useState(''),[courierPhone,setCourierPhone]=useState(''),[orders,setOrders]=useState([]),[date,setDate]=useState(()=>new Date().toLocaleDateString('en-CA')),[error,setError]=useState('')
+ const refresh=async()=>{const [z,c,o]=await Promise.all([supabase.from('delivery_zones').select('*').order('name'),supabase.from('delivery_couriers').select('*').order('name'),supabase.from('orders').select('id,order_number,delivery_zone,delivery_fee,courier_id,courier_name,routed_at,delivered_at,status').eq('delivery_type','delivery').not('courier_id','is',null)]);if(z.data)setZones(z.data);if(c.data)setCouriers(c.data);if(o.data)setOrders(o.data)}
+ useEffect(()=>{refresh()},[])
+ const saveZone=async(z)=>{const {error:e}=await supabase.from('delivery_zones').update({fee:Number(z.fee),active:z.active}).eq('id',z.id);if(e)setError(e.message);else refresh()}
+ const addZone=async()=>{if(!zoneName.trim()||Number(zoneFee)<0)return;const {error:e}=await supabase.from('delivery_zones').insert({name:zoneName.trim(),fee:Number(zoneFee)});if(e)setError(e.message);else{setZoneName('');setZoneFee('');refresh()}}
+ const addCourier=async()=>{if(!courierName.trim()||!courierPhone.trim())return;const {error:e}=await supabase.from('delivery_couriers').insert({name:courierName.trim(),phone:courierPhone.trim()});if(e)setError(e.message);else{setCourierName('');setCourierPhone('');refresh()}}
+ const day=orders.filter(o=>o.routed_at&&new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(o.routed_at))===date&&o.status!=='Cancelado')
+ return <div className="delivery-admin"><section className="card"><h2>Tarifas por colonia</h2>{zones.map(z=><div className="delivery-admin-row" key={z.id}><b>{z.name}</b><input type="number" min="0" value={z.fee} onChange={e=>setZones(prev=>prev.map(x=>x.id===z.id?{...x,fee:e.target.value}:x))}/><label><input type="checkbox" checked={z.active} onChange={e=>setZones(prev=>prev.map(x=>x.id===z.id?{...x,active:e.target.checked}:x))}/> Activa</label><button onClick={()=>saveZone(z)}>Guardar</button></div>)}<h3>Agregar colonia</h3><input placeholder="Colonia" value={zoneName} onChange={e=>setZoneName(e.target.value)}/><input type="number" min="0" placeholder="Envío $" value={zoneFee} onChange={e=>setZoneFee(e.target.value)}/><button className="primary" onClick={addZone}>Agregar</button></section><section className="card"><h2>Repartidores</h2>{couriers.map(c=><div className="delivery-admin-row" key={c.id}><input value={c.name} onChange={e=>setCouriers(prev=>prev.map(x=>x.id===c.id?{...x,name:e.target.value}:x))}/><input value={c.phone} onChange={e=>setCouriers(prev=>prev.map(x=>x.id===c.id?{...x,phone:e.target.value}:x))}/><label><input type="checkbox" checked={c.active} onChange={e=>setCouriers(prev=>prev.map(x=>x.id===c.id?{...x,active:e.target.checked}:x))}/> Activo</label><button onClick={async()=>{const {error:e}=await supabase.from('delivery_couriers').update({name:c.name,phone:c.phone,active:c.active}).eq('id',c.id);if(e)setError(e.message);else refresh()}}>Guardar</button></div>)}<h3>Agregar repartidor</h3><input placeholder="Nombre" value={courierName} onChange={e=>setCourierName(e.target.value)}/><input placeholder="Teléfono" value={courierPhone} onChange={e=>setCourierPhone(e.target.value)}/><button className="primary" onClick={addCourier}>Agregar</button></section><section className="card"><h2>Envíos por repartidor y día</h2><label>Fecha<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label>{couriers.map(c=>{const records=day.filter(o=>o.courier_id===c.id);return <div key={c.id}><h3>{c.name} · {records.length} envíos · ${records.reduce((n,o)=>n+Number(o.delivery_fee||0),0).toFixed(2)}</h3>{records.map(o=><p key={o.id}>{o.order_number} · {o.delivery_zone} · ${Number(o.delivery_fee||0).toFixed(2)}</p>)}</div>})}<p>Los envíos están separados de ventas y propinas.</p></section>{error&&<p>{error}</p>}</div>
+}

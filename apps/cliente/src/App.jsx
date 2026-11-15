@@ -216,9 +216,10 @@ const screenFromHash=()=>{
   return 'home'
 }
 
-const CUSTOMER_ORDER_SELECT='id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
-const ACTIVE_ORDER_STATUSES=['Nuevo','Preparando','Listo']
+const CUSTOMER_ORDER_SELECT='delivery_type,delivery_address,delivery_zone,delivery_fee,tip_amount,requested_payment,id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
+const ACTIVE_ORDER_STATUSES=['Nuevo','Preparando','Listo','En camino']
 const customerOrderState=(status,pickupLabel=ASAP_PICKUP_LABEL)=>{
+  if(status==='En camino')return {label:'En camino',eta:'Tu pedido va con el repartidor.',step:1}
   if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:1}
   if(status==='Entregado')return {label:'Entregado',eta:'Pedido completado.',step:2}
   if(status==='Cancelado')return {label:'Cancelado',eta:'Este pedido fue cancelado.',step:0}
@@ -243,7 +244,14 @@ function App(){
   const [name,setName]=useState('')
   const [phone,setPhone]=useState('')
   const [pickup,setPickup]=useState(ASAP_PICKUP_LABEL)
-  const [payment,setPayment]=useState('pickup')
+  const [payment,setPayment]=useState('cash')
+  const [deliveryType,setDeliveryType]=useState('pickup')
+  const [addresses,setAddresses]=useState([])
+  const [zones,setZones]=useState([])
+  const [addressId,setAddressId]=useState('')
+  const [addressModal,setAddressModal]=useState(false)
+  const [tipMode,setTipMode]=useState('0')
+  const [customTip,setCustomTip]=useState('')
   const [placed,setPlaced]=useState(false)
   const [lastOrder,setLastOrder]=useState(null)
   const [activeOrder,setActiveOrder]=useState(null)
@@ -263,6 +271,19 @@ function App(){
   const [catalog,setCatalog]=useState({})
   const [catalogRows,setCatalogRows]=useState(null)
   const [storeSettings,setStoreSettings]=useState(null)
+
+  const selectedAddress=addresses.find(a=>a.id===addressId)||null
+  const selectedZone=zones.find(z=>z.id===selectedAddress?.zone_id)||null
+  const deliveryFee=deliveryType==='delivery'?Number(selectedZone?.fee||0):0
+  const tipBase=Math.max(0,cartItems.reduce((sum,item)=>sum+Number(itemUnitPrice(item))*Number(item.quantity||1),0))
+  const tipAmount=tipMode==='custom'?Math.round(Number(customTip||0)*100)/100:Math.round(tipBase*Number(tipMode)/100*100)/100
+  const refreshAddresses=useCallback(async()=>{
+    if(!supabase||!session?.user)return
+    const {data,error}=await supabase.from('customer_addresses').select('*').order('created_at',{ascending:false})
+    if(!error){setAddresses(data||[]);setAddressId(previous=>previous||(data?.[0]?.id||''))}
+  },[session?.user?.id])
+  useEffect(()=>{if(!supabase)return;supabase.from('delivery_zones').select('id,name,fee').eq('active',true).order('name').then(({data})=>setZones(data||[]))},[])
+  useEffect(()=>{refreshAddresses()},[refreshAddresses])
 
   // Política y términos funcionan como páginas internas accesibles por hash.
   useEffect(()=>{
@@ -666,6 +687,8 @@ function App(){
     if(!supabaseConfigured || !supabase){setPlaceError('Falta conectar Supabase en Vercel.');return}
     if(storeSettings && (!storeSettings.store_open || !storeSettings.pickup_enabled)){setPlaceError('La tienda no está recibiendo pedidos en este momento.');return}
     if(!session?.user){setPlaceError('Inicia sesión para confirmar tu pedido.');setScreen('home');setAuthIntent('checkout');setProfileOpen(true);return}
+    if(deliveryType==='delivery'&&!selectedAddress){setPlaceError('Selecciona o agrega tu dirección.');return}
+    if(!Number.isFinite(tipAmount)||tipAmount<0||tipAmount>100000){setPlaceError('Revisa la propina.');return}
     if(!cartItems.length || !name.trim() || !phone.trim()){setPlaceError('Completa tu perfil antes de realizar el pedido.');return}
 
     const payload=buildOrderPayload(cartItems)
@@ -702,9 +725,13 @@ function App(){
         return
       }
 
-      const {data,error}=await supabase.rpc('create_customer_order_with_cashback',{
+      const {data,error}=await supabase.rpc('create_customer_delivery_order',{
         p_pickup_label:pickup,
         p_payment_method:'pickup',
+        p_delivery_type:deliveryType,
+        p_address_id:deliveryType==='delivery'?addressId:null,
+        p_requested_payment:payment,
+        p_tip_amount:tipAmount,
         p_items:payload,
         p_cashback_to_use:discount,
       })
@@ -717,6 +744,7 @@ function App(){
         customer_phone:phone,
         pickup_label:pickup,
         payment_method:'pickup',
+        delivery_type:deliveryType,delivery_address:selectedAddress,delivery_zone:selectedZone?.name||null,delivery_fee:deliveryFee,tip_amount:tipAmount,requested_payment:payment,
         payment_status:'pending',
         status:created?.status==='Listo'?'Listo':'Preparando',
         first_order_discount:firstOrderGiftDiscount,
@@ -779,7 +807,7 @@ function App(){
     return maxDiscount
   },[redeemCashback,cashbackBalance,subtotalAfterFirstOrderGift,payment])
   const orderPayload=useMemo(()=>buildOrderPayload(cartItems),[cartItems])
-  const stripeDraftKey=useMemo(()=>JSON.stringify({pickup,cashback:cashbackDiscount,firstOrderGift:firstOrderGiftDiscount,items:orderPayload}),[pickup,cashbackDiscount,firstOrderGiftDiscount,orderPayload])
+  const stripeDraftKey=useMemo(()=>JSON.stringify({pickup,deliveryType,addressId,tipAmount,cashback:cashbackDiscount,firstOrderGift:firstOrderGiftDiscount,items:orderPayload}),[pickup,deliveryType,addressId,tipAmount,cashbackDiscount,firstOrderGiftDiscount,orderPayload])
 
   // Para mostrar la tarjeta dentro del checkout necesitamos una Checkout Session en modo Elements.
   // Si cambia el horario, cashback o carrito, cancelamos el borrador anterior y generamos uno nuevo.
@@ -788,7 +816,7 @@ function App(){
     let alive=true
     let timer=null
 
-    if(screen!=='cart'||payment!=='online'||!orderPayload.length||firstOrderGiftLoading){
+    if(screen!=='cart'||payment!=='online'||!orderPayload.length||firstOrderGiftLoading||(deliveryType==='delivery'&&!addressId)){
       if(stripeCheckout?.order_id){
         const staleOrderId=stripeCheckout.order_id
         setStripeCheckout(null)
@@ -810,7 +838,7 @@ function App(){
           await cancelPendingStripeCheckout(stripeCheckout.order_id)
         }
         const {data,error}=await supabase.functions.invoke('create-stripe-checkout',{
-          body:{pickup_label:pickup,items:orderPayload,cashback_to_use:cashbackDiscount},
+          body:{pickup_label:pickup,items:orderPayload,cashback_to_use:cashbackDiscount,delivery_type:deliveryType,address_id:deliveryType==='delivery'?addressId:null,tip_amount:tipAmount},
         })
         if(error)throw new Error(data?.error||error.message||'No pudimos preparar el pago con Stripe.')
         if(!alive){
@@ -854,22 +882,23 @@ function App(){
     {stripeReturning&&<div className="stripe-return-overlay"><div><span className="stripe-return-spinner"/><b>Confirmando tu pago</b><p>Estamos verificando la operación con Stripe. No cierres esta ventana.</p></div></div>}
     {screen!=='builder' && screen!=='cart' && <header className="topbar">
       <button className="icon-btn profile-btn" onClick={()=>{setAuthIntent('profile');setProfileOpen(true)}} aria-label="Ver perfil"><UserRound size={23}/></button>
-      <div className="brand-mini" onClick={goHome}><img src="/logo.jpg" alt="Chi-nito"/></div>
+      <div className="brand-mini" onClick={goHome}><img src="/logo.jpg" alt="Chi-nito"/></div><button className="address-top-button" onClick={()=>{if(!session?.user){setAuthIntent('profile');setProfileOpen(true)}else setAddressModal(true)}}>📍 {selectedAddress?selectedAddress.label:"Agregar dirección"}</button>
       {activeOrder ? <button className={`order-tracker-button ${activeOrder.status==='Listo'?'ready':''}`} onClick={()=>{setScreen('tracking');window.scrollTo(0,0)}} aria-label="Ver estado de mi pedido" title={customerOrderState(activeOrder.status).label}><Clock3 size={21}/><i /></button> : <div className="topbar-spacer" aria-hidden="true" />}
     </header>}
 
     {screen==='home' && <>
       <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} catalog={catalog} menuData={clientMenu} />
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
-      {cartOpen && <CartSheet items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
+      {cartOpen && <CartSheet deliveryType={deliveryType} setDeliveryType={setDeliveryType} selectedAddress={selectedAddress} onAddress={()=>setAddressModal(true)} deliveryFee={deliveryFee} items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
     </>}
     {screen==='tracking' && <OrderTracker order={activeOrder} loading={activeOrderLoading} onBack={goHome} />}
     {screen==='privacy' && <LegalPage type="privacy" onBack={goHome} />}
     {screen==='terms' && <LegalPage type="terms" onBack={goHome} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='cart' && !session?.user && authReady && <div className="auth-checkout-gate"><p>Inicia sesión para continuar con tu pedido.</p><button className="primary" onClick={()=>{setScreen('home');setAuthIntent('checkout');setProfileOpen(true)}}>Iniciar sesión</button></div>}
-    {screen==='cart' && session?.user && <Cart items={displayCart} total={cartTotal} firstOrderGiftDiscount={firstOrderGiftDiscount} firstOrderGiftLoading={firstOrderGiftLoading} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
+    {screen==='cart' && session?.user && <Cart deliveryType={deliveryType} setDeliveryType={setDeliveryType} addresses={addresses} addressId={addressId} setAddressId={setAddressId} selectedZone={selectedZone} deliveryFee={deliveryFee} onAddress={()=>setAddressModal(true)} tipMode={tipMode} setTipMode={setTipMode} customTip={customTip} setCustomTip={setCustomTip} tipAmount={tipAmount} items={displayCart} total={cartTotal} firstOrderGiftDiscount={firstOrderGiftDiscount} firstOrderGiftLoading={firstOrderGiftLoading} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
+    {addressModal&&<AddressModal zones={zones} onClose={()=>setAddressModal(false)} onSaved={async(id)=>{await refreshAddresses();if(id)setAddressId(id);setAddressModal(false)}}/>}
     {profileOpen && <ProfileDrawer
       session={session}
       intent={authIntent}
@@ -1117,7 +1146,7 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extrasQ
 function Step({num,title,subtitle,right,children}){return <section className="step"><div className={`step-head ${!num?'optional-step-head':''}`}>{num&&<span className="step-num">{num}</span>}<div><h3>{title}</h3><p>{subtitle}</p></div>{right&&<div className="step-right">{right}</div>}</div>{children}</section>}
 
 
-function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
+function CartSheet({deliveryType,setDeliveryType,selectedAddress,onAddress,deliveryFee,items,total,onClose,onChangeQty,onRemove,onContinue}){
   return <div className="cart-sheet-overlay" onClick={onClose}>
     <section className="cart-sheet" onClick={e=>e.stopPropagation()} aria-label="Carrito">
       <div className="cart-sheet-handle" />
@@ -1148,6 +1177,7 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
           </article>
         })}
       </div>
+      <DeliverySwitch type={deliveryType} setType={setDeliveryType}/>{deliveryType==='delivery'&&<button className="address-select" onClick={onAddress}>{selectedAddress?`${selectedAddress.label} · Envío $${deliveryFee}`:"Agregar dirección"}</button>}
       <div className="cart-sheet-footer">
         <div><span>Total</span><strong>${total}</strong></div>
         <button className="primary cart-sheet-continue" onClick={onContinue}>Continuar <ChevronRight size={18}/></button>
@@ -1156,8 +1186,8 @@ function CartSheet({items,total,onClose,onChangeQty,onRemove,onContinue}){
   </div>
 }
 
-function Cart({items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,stripeClientSecret,stripeLoading,stripeError,stripeReady,onStripeReady,onStripeError,onBack,onPlace,placing,placeError}){
-  const finalTotal=Math.max(0,total-firstOrderGiftDiscount-cashbackDiscount)
+function Cart({deliveryType,setDeliveryType,addresses,addressId,setAddressId,selectedZone,deliveryFee,onAddress,tipMode,setTipMode,customTip,setCustomTip,tipAmount,items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,stripeClientSecret,stripeLoading,stripeError,stripeReady,onStripeReady,onStripeError,onBack,onPlace,placing,placeError}){
+  const finalTotal=Math.max(0,total-firstOrderGiftDiscount-cashbackDiscount)+deliveryFee+tipAmount
   const itemCount=items.reduce((sum,item)=>sum+Number(item.quantity||0),0)
   const displayName=formatPersonName(name)
   const [pickupMode,setPickupMode]=useState(()=>pickup===ASAP_PICKUP_LABEL?'asap':'later')
@@ -1218,9 +1248,10 @@ function Cart({items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashback
         <section className="checkout-section">
           <div className="checkout-section-title">
             <span className="checkout-section-number">2</span>
-            <div><h2>Recoge tu pedido</h2><p>Selecciona el horario que mejor te funcione.</p></div>
+            <div><h2>¿Cómo recibirás tu pedido?</h2><p>Elige recogerlo o enviarlo a domicilio.</p></div>
           </div>
-          <div className="checkout-pickup-option selected">
+          <DeliverySwitch type={deliveryType} setType={setDeliveryType}/>{deliveryType==='delivery'&&<div className="checkout-address-picker"><label>Dirección de entrega<select value={addressId} onChange={e=>setAddressId(e.target.value)}><option value="">Seleccionar dirección</option>{addresses.map(a=><option key={a.id} value={a.id}>{a.label} · {a.street} {a.exterior_number}</option>)}</select></label><button type="button" onClick={onAddress}>+ Agregar dirección</button></div>}
+          {deliveryType==='pickup'&&<><div className="checkout-pickup-option selected">
             <div className="checkout-option-icon"><ShoppingBag size={20}/></div>
             <div className="checkout-pickup-copy"><strong>Recoger en sucursal</strong><span>Sin costo de servicio</span></div>
             <span className="checkout-selected-dot"><Check size={12}/></span>
@@ -1247,8 +1278,10 @@ function Cart({items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashback
               {!pickupSlots.length&&<small className="checkout-no-more-slots">No hay horarios programados disponibles.</small>}
             </>}
           </div>
+          </>}
         </section>
 
+        <section className="checkout-section"><h2>Propina para el team</h2><p>Opcional, se entrega al equipo y no se mezcla con ventas.</p><div className="tip-buttons">{[['0','Sin propina'],['10','10%'],['15','15%'],['20','20%'],['custom','Otra cantidad']].map(([value,label])=><button key={value} type="button" className={tipMode===value?'selected':''} onClick={()=>setTipMode(value)}>{label}</button>)}</div>{tipMode==='custom'&&<label className="tip-custom">Propina en pesos $<input type="number" min="0" max="100000" step="0.01" value={customTip} onChange={e=>setCustomTip(e.target.value)}/></label>}<p>Propina: ${tipAmount.toFixed(2)}</p></section>
         <section className="checkout-section">
           <div className="checkout-section-title">
             <span className="checkout-section-number">3</span>
@@ -1267,12 +1300,7 @@ function Cart({items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashback
               {stripeError&&<p className="checkout-stripe-error">{stripeError}</p>}
               {stripeClientSecret&&<StripePaymentFields clientSecret={stripeClientSecret} onReady={onStripeReady} onError={onStripeError}/>}
             </div>}
-            <button type="button" className={`checkout-payment-option ${payment==='pickup'?'selected':''}`} onClick={()=>setPayment('pickup')}>
-              <span className="checkout-option-radio"><i /></span>
-              <span className="checkout-option-icon"><ShoppingBag size={20}/></span>
-              <span><strong>Pagar al recoger</strong><small>Efectivo o tarjeta en sucursal</small></span>
-              <ChevronRight size={18}/>
-            </button>
+            {[['cash','Efectivo'],['terminal','Terminal']].map(([key,label])=><button key={key} type="button" className={`checkout-payment-option ${payment===key?'selected':''}`} onClick={()=>setPayment(key)}><span className="checkout-option-radio"><i /></span><span className="checkout-option-icon"><CreditCard size={20}/></span><span><strong>{label}</strong><small>Pagar al recibir el pedido</small></span><ChevronRight size={18}/></button>)}
           </div>
         </section>
 
@@ -1340,11 +1368,12 @@ function Cart({items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashback
           <div><span>Subtotal</span><strong>${total.toFixed(2)}</strong></div>
           {firstOrderGiftDiscount>0&&<div className="discount first-order-discount"><span>Regalo primer pedido</span><strong>−${firstOrderGiftDiscount.toFixed(2)}</strong></div>}
           {cashbackDiscount>0&&<div className="discount"><span>Cashback</span><strong>−${cashbackDiscount.toFixed(2)}</strong></div>}
-          <div><span>Pickup</span><strong>Gratis</strong></div>
+          {deliveryType==='delivery'?<div><span>Envío {selectedZone?.name||''}</span><strong>${deliveryFee.toFixed(2)}</strong></div>:<div><span>Pickup</span><strong>Gratis</strong></div>}
+          {tipAmount>0&&<div><span>Propina para el team</span><strong>${tipAmount.toFixed(2)}</strong></div>}
         </div>
         <div className="checkout-summary-total"><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
         {placeError&&<p className="checkout-error">{placeError}</p>}
-        <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||!name||!phone||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>
+        <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||!name||!phone||(deliveryType==='delivery'&&!addressId)||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>
           {placing?(payment==='online'?'Procesando pago…':'Creando pedido…'):(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar pedido')} {!placing&&<ChevronRight size={18}/>}
         </button>
         <p className="checkout-legal-note">{payment==='online'?'Tu tarjeta se captura aquí mismo. Si tu banco solicita 3D Secure, Stripe puede abrir una verificación y regresarte automáticamente a Chi-nito.':'Al confirmar, tu pedido se enviará directamente a cocina.'}</p>
@@ -1353,14 +1382,14 @@ function Cart({items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashback
 
     <div className="checkout-mobile-bar">
       <div><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
-      <button className="primary" disabled={!items.length||!name||!phone||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar')} <ChevronRight size={18}/></button>
+      <button className="primary" disabled={!items.length||!name||!phone||(deliveryType==='delivery'&&!addressId)||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar')} <ChevronRight size={18}/></button>
     </div>
   </main>
 }
 
 function OrderStatusSteps({status}){
   const state=customerOrderState(status)
-  const steps=['Preparando','Listo para recoger']
+  const steps=['Preparando','Listo / En camino']
   return <div className="order-status-steps">{steps.map((label,index)=>{
     const done=state.step>index
     const current=state.step===index
@@ -1383,7 +1412,7 @@ function OrderTracker({order,loading,onBack}){
   return <main className="tracking-page">
     <button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button>
     <section className={`tracking-hero ${order.status==='Listo'?'ready':''}`}><div className="tracking-live"><i/> PEDIDO EN VIVO</div><div className="tracking-hero-main"><div><span>{order.order_number}</span><h1>{state.label}</h1><p>{state.eta}</p></div><Clock3 size={42}/></div><OrderStatusSteps status={order.status}/></section>
-    <div className="tracking-grid"><section className="tracking-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Tu pedido</h2><p>Lo que estamos preparando</p></div></div><OrderItemsSummary items={order.order_items||[]}/></section><section className="tracking-card tracking-details"><h2>Detalles</h2><div><span>Recoge a nombre de</span><b>{formatPersonName(order.customer_name||'')}</b></div><div><span>Pickup</span><b>{displayPickupLabel(order.pickup_label||ASAP_PICKUP_LABEL)}</b></div><div><span>Pago</span><b>{order.payment_method==='online'?'Pago en línea':'Pago al recoger'}</b></div><div><span>Total</span><strong>${Number(order.total||0).toFixed(2)}</strong></div></section></div>
+    <div className="tracking-grid"><section className="tracking-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Tu pedido</h2><p>Lo que estamos preparando</p></div></div><OrderItemsSummary items={order.order_items||[]}/></section><section className="tracking-card tracking-details"><h2>Detalles</h2><div><span>Pedido a nombre de</span><b>{formatPersonName(order.customer_name||'')}</b></div><div><span>{order.delivery_type==='delivery'?'Domicilio':'Pickup'}</span><b>{order.delivery_type==='delivery'?`${order.delivery_address?.street||''} ${order.delivery_address?.exterior_number||''} · ${order.delivery_zone||''}`:displayPickupLabel(order.pickup_label||ASAP_PICKUP_LABEL)}</b></div><div><span>Pago</span><b>{order.payment_method==='online'?'Pago en línea':order.requested_payment==='terminal'?'Terminal':'Efectivo'}</b></div><div><span>Total de productos</span><strong>${Number(order.total||0).toFixed(2)}</strong></div>{Number(order.delivery_fee||0)>0&&<div><span>Envío</span><strong>${Number(order.delivery_fee||0).toFixed(2)}</strong></div>}{Number(order.tip_amount||0)>0&&<div><span>Propina</span><strong>${Number(order.tip_amount||0).toFixed(2)}</strong></div>}<div><span>Total a pagar</span><strong>${(Number(order.total||0)+Number(order.delivery_fee||0)+Number(order.tip_amount||0)).toFixed(2)}</strong></div></section></div>
     <section className="tracking-help">
       <div><span>¿Necesitas ayuda?</span><b>Envíanos un WhatsApp</b></div>
       <a href={`https://wa.me/524412496395?text=${encodeURIComponent(`Hola, necesito ayuda con mi pedido ${order.order_number||''} de Chi-nito.`)}`} target="_blank" rel="noreferrer"><MessageCircle size={18}/> WhatsApp</a>
@@ -1405,3 +1434,12 @@ function Success({order,onReset}){
 }
 
 export default App
+
+function DeliverySwitch({type,setType}){return <div className="delivery-switch"><button type="button" className={type==='pickup'?'selected':''} onClick={()=>setType('pickup')}>Recoger en sucursal</button><button type="button" className={type==='delivery'?'selected':''} onClick={()=>setType('delivery')}>A domicilio</button></div>}
+function AddressModal({zones,onClose,onSaved}){
+ const [draft,setDraft]=useState({label:'Casa',street:'',exterior_number:'',interior_number:'',postal_code:'',zone_id:'',references:''})
+ const [busy,setBusy]=useState(false),[error,setError]=useState('')
+ const change=(key,value)=>setDraft(d=>({...d,[key]:value}))
+ const save=async(e)=>{e.preventDefault();setBusy(true);setError('');const {data,error:err}=await supabase.from('customer_addresses').insert({...draft}).select('id').single();setBusy(false);if(err)setError(err.message);else onSaved(data.id)}
+ return <div className="address-overlay" onMouseDown={onClose}><form className="address-dialog" onMouseDown={e=>e.stopPropagation()} onSubmit={save}><header><h2>Agregar dirección</h2><button type="button" onClick={onClose}><X/></button></header><div className="address-fields">{[['label','Nombre de la dirección'],['street','Calle'],['exterior_number','Número exterior'],['interior_number','Número interior'],['postal_code','Código postal']].map(([key,label])=><label key={key}>{label}<input required={key!=='interior_number'} maxLength={key==='postal_code'?5:120} value={draft[key]} onChange={e=>change(key,e.target.value)}/></label>)}<label>Colonia<select required value={draft.zone_id} onChange={e=>change('zone_id',e.target.value)}><option value="">Seleccionar colonia</option>{zones.map(z=><option key={z.id} value={z.id}>{z.name}</option>)}</select></label><label className="wide">Detalles o referencias<textarea value={draft.references} onChange={e=>change('references',e.target.value)}/></label></div>{error&&<p className="checkout-error">{error}</p>}<button className="primary" disabled={busy}>{busy?'Guardando…':'Guardar dirección'}</button></form></div>
+}
