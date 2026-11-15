@@ -74,3 +74,16 @@
 
 /* Entregas a domicilio */
 .delivery-admin{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:15px}.delivery-admin-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid #ddd}.delivery-admin-row input{max-width:105px;min-width:0}.delivery-admin .card{min-width:0}.delivery-admin .card>input{max-width:180px;padding:10px;margin:5px}.delivery-admin button{cursor:pointer}
+
+/* Configuración de horario semanal */
+.settings-weekly-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.settings-hours-card,.settings-save-bar{grid-column:1/-1}
+.weekly-hour-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.weekly-hour-day{display:flex!important;flex-direction:row;align-items:center;gap:9px!important;min-width:125px;margin:0!important}
+.weekly-hour-day input{width:17px;height:17px;accent-color:var(--red)}
+.weekly-hour-times{display:flex;align-items:center;gap:9px;flex:1}
+.weekly-hour-times input{width:135px;max-width:42%;padding:9px}
+.weekly-hour-times input:disabled{opacity:.4}
+.weekly-hour-row small{color:var(--muted)}
+.settings-save-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.settings-save-bar button{border:0;padding:12px 20px;border-radius:12px;cursor:pointer}
+@media(max-width:720px){.settings-weekly-layout{grid-template-columns:1fr}.weekly-hour-day{min-width:100px}.weekly-hour-times input{max-width:45%;width:100%}}

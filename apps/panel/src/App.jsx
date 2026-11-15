@@ -539,11 +539,30 @@ function MenuEditor({item,menu,onClose,onSaved}){
 
 function Availability({menu,onToggle}){return <section className="card"><div className="card-head"><div><span className="eyebrow">CONTROL RÁPIDO</span><h2>Disponibilidad</h2></div></div><p className="lead">Activa o agota productos al instante. El cambio se refleja en la app del cliente.</p><div className="availability">{menu.map(m=><button key={m.id} onClick={()=>onToggle(m)} className={m.active?'available':'sold'}><span>{m.active?'●':'○'}</span><div><b>{m.name}</b><small>{m.category}</small></div><em>{m.active?'Disponible':'Agotado'}</em></button>)}</div></section>}
 
+const WEEK_DAYS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
+const DEFAULT_WEEKLY_HOURS={0:{open:true,start:'13:00',end:'20:00'},1:{open:false,start:'13:00',end:'20:00'},2:{open:true,start:'13:00',end:'20:00'},3:{open:true,start:'13:00',end:'20:00'},4:{open:true,start:'13:00',end:'20:00'},5:{open:true,start:'13:00',end:'20:00'},6:{open:true,start:'13:00',end:'20:00'}}
 function SettingsPage({settings,setSettings}){
- const [draft,setDraft]=useState(settings||{store_name:'Chi-nito Centro',store_open:true,pickup_enabled:true,opening_time:'11:00 a.m.',closing_time:'9:00 p.m.'})
+ const [draft,setDraft]=useState(settings||{})
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false)
  useEffect(()=>{if(settings)setDraft(settings)},[settings])
- const save=async()=>{const {data,error}=await supabase.from('store_settings').update({store_name:draft.store_name,store_open:draft.store_open,pickup_enabled:draft.pickup_enabled,opening_time:draft.opening_time,closing_time:draft.closing_time}).eq('id',1).select().single(); if(!error)setSettings(data)}
- return <div className="two-col"><section className="card"><span className="eyebrow">SUCURSAL</span><h2>Datos generales</h2><label>Nombre<input value={draft.store_name||''} onChange={e=>setDraft({...draft,store_name:e.target.value})}/></label><label>Modalidad<input value="Pickup y domicilio" disabled/></label><label>Horario de apertura<input value={draft.opening_time||''} onChange={e=>setDraft({...draft,opening_time:e.target.value})}/></label><label>Horario de cierre<input value={draft.closing_time||''} onChange={e=>setDraft({...draft,closing_time:e.target.value})}/></label><button className="primary" onClick={save}>Guardar cambios</button></section><section className="card"><span className="eyebrow">OPERACIÓN</span><h2>Estado de la tienda</h2><button className={`setting-toggle ${draft.store_open?'enabled':''}`} onClick={()=>setDraft({...draft,store_open:!draft.store_open})}><div><b>Tienda {draft.store_open?'abierta':'cerrada'}</b><span>Controla el estado operativo</span></div>{draft.store_open?<ToggleRight/>:<ToggleLeft/>}</button><button className={`setting-toggle ${draft.pickup_enabled?'enabled':''}`} onClick={()=>setDraft({...draft,pickup_enabled:!draft.pickup_enabled})}><div><b>Pickup {draft.pickup_enabled?'habilitado':'deshabilitado'}</b><span>Controla la opción de recoger en sucursal</span></div>{draft.pickup_enabled?<ToggleRight/>:<ToggleLeft/>}</button></section></div>
+ const hours={...DEFAULT_WEEKLY_HOURS,...draft.weekly_hours}
+ const changeDay=(index,patch)=>setDraft(d=>({...d,weekly_hours:{...DEFAULT_WEEKLY_HOURS,...d.weekly_hours,[index]:{...hours[index],...patch}}}))
+ const save=async()=>{
+  setError('');setSaved(false)
+  const minimum=Number(draft.minimum_order_amount??200)
+  if(!Number.isFinite(minimum)||minimum<0){setError('El pedido mínimo debe ser un importe válido.');return}
+  for(let i=0;i<7;i++){const h=hours[i];if(h.open&&(!h.start||!h.end||h.start>=h.end)){setError(`Revisa el horario de ${WEEK_DAYS[i]}.`);return}}
+  setBusy(true)
+  const {data,error:e}=await supabase.from('store_settings').update({store_name:draft.store_name,store_open:draft.store_open,pickup_enabled:draft.pickup_enabled,minimum_order_amount:minimum,weekly_hours:hours}).eq('id',1).select().single()
+  if(e)setError(e.message);else{setSettings(data);setSaved(true)}
+  setBusy(false)
+ }
+ return <div className="settings-weekly-layout">
+  <section className="card"><span className="eyebrow">SUCURSAL</span><h2>Datos generales</h2><label>Nombre<input value={draft.store_name||''} onChange={e=>setDraft({...draft,store_name:e.target.value})}/></label><label>Pedido mínimo ($ MXN, solo productos)<input type="number" min="0" step="0.01" value={draft.minimum_order_amount??200} onChange={e=>setDraft({...draft,minimum_order_amount:e.target.value})}/></label><p className="hint">El envío y la propina no cuentan para alcanzar el mínimo.</p></section>
+  <section className="card"><span className="eyebrow">OPERACIÓN</span><h2>Estado de la tienda</h2><button className={`setting-toggle ${draft.store_open?'enabled':''}`} onClick={()=>setDraft({...draft,store_open:!draft.store_open})}><div><b>Tienda {draft.store_open?'abierta':'cerrada'}</b><span>Interruptor general de recepción de pedidos inmediatos</span></div>{draft.store_open?<ToggleRight/>:<ToggleLeft/>}</button><button className={`setting-toggle ${draft.pickup_enabled?'enabled':''}`} onClick={()=>setDraft({...draft,pickup_enabled:!draft.pickup_enabled})}><div><b>Pickup {draft.pickup_enabled?'habilitado':'deshabilitado'}</b><span>Disponibilidad para recoger en sucursal</span></div>{draft.pickup_enabled?<ToggleRight/>:<ToggleLeft/>}</button></section>
+  <section className="card settings-hours-card"><span className="eyebrow">HORARIOS</span><h2>Horario semanal</h2><p className="hint">Configura de domingo a sábado. Los días cerrados no aparecerán como opción programada.</p>{WEEK_DAYS.map((day,index)=>{const h=hours[index];return <div className="weekly-hour-row" key={day}><label className="weekly-hour-day"><input type="checkbox" checked={!!h.open} onChange={e=>changeDay(index,{open:e.target.checked})}/><b>{day}</b></label><div className="weekly-hour-times"><input type="time" value={h.start} disabled={!h.open} onChange={e=>changeDay(index,{start:e.target.value})}/><span>a</span><input type="time" value={h.end} disabled={!h.open} onChange={e=>changeDay(index,{end:e.target.value})}/></div><small>{h.open?'Abierto':'No abre'}</small></div>})}</section>
+  <div className="settings-save-bar"><button className="primary" disabled={busy} onClick={save}>{busy?'Guardando…':'Guardar configuración'}</button>{saved&&<p>Configuración guardada.</p>}{error&&<p className="auth-error">{error}</p>}</div>
+ </div>
 }
 
 function StaffLogin({title,error}){

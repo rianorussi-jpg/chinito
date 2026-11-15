@@ -2784,3 +2784,7 @@
 .address-action-error{color:#bd1b24;font-size:11px;padding:8px}
 @media(max-width:650px){.checkout-section:has(.tip-buttons)>h2{font-size:15px!important}.checkout-section .tip-buttons button{font-size:11px;padding:9px 10px}}
 .cart-sheet-footer strong,.cart-sheet-copy strong{color:#211b18}
+
+/* Pedido mínimo: aviso claro y botón bloqueado */
+.cart-minimum-warning{margin:10px 18px;padding:12px 14px;border-radius:12px;background:#fff3e8;color:#5f330c!important;font-size:13px;font-weight:700;line-height:1.5}
+.cart-sheet-continue:disabled{opacity:.5;cursor:not-allowed}

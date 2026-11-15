@@ -139,63 +139,50 @@ const CART_STORAGE_KEY='chinito_cart_v1'
 const STRIPE_PENDING_ORDER_KEY='chinito_pending_stripe_order_v1'
 const ASAP_PICKUP_LABEL='Lo antes posible · 10–15 min'
 const FIRST_ORDER_GIFT_AMOUNT=50
-const PICKUP_OPEN_MINUTES=13*60
-const PICKUP_CLOSE_MINUTES=20*60
 const formatPickupMinutes=(minutes)=>`${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`
 const displayPickupLabel=(label='')=>String(label||'').replace(/Lo antes posible\s*·\s*20[–-]30 min/i,'Lo antes posible · 10–15 min')
 const isAsapPickup=(label='')=>/^Lo antes posible\b/i.test(displayPickupLabel(label).trim())
 const SERVICE_DAY_NAMES=['domingo','lunes','martes','miércoles','jueves','viernes','sábado']
 const SERVICE_DAY_LABELS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
-const getStoreScheduleState=(now=new Date())=>{
-  const day=now.getDay()
-  const currentMinutes=now.getHours()*60+now.getMinutes()
-  const monday=day===1
-  const withinHours=currentMinutes>=PICKUP_OPEN_MINUTES&&currentMinutes<PICKUP_CLOSE_MINUTES
-
-  // Chi-nito abre de martes a domingo. Los lunes siempre se programa para el martes.
-  if(!monday&&withinHours){
-    return {open:true,period:'open',scheduleDay:'today',offsetDays:0,targetDay:day}
-  }
-  if(monday){
-    return {open:false,period:'closed-day',scheduleDay:'tomorrow',offsetDays:1,targetDay:2}
-  }
-  if(currentMinutes<PICKUP_OPEN_MINUTES){
-    return {open:false,period:'before',scheduleDay:'today',offsetDays:0,targetDay:day}
-  }
-  // El domingo después de las 20:00 se salta el lunes y se programa para el martes.
-  if(day===0){
-    return {open:false,period:'after',scheduleDay:'next-service-day',offsetDays:2,targetDay:2}
-  }
-  const targetDay=(day+1)%7
-  return {open:false,period:'after',scheduleDay:'tomorrow',offsetDays:1,targetDay}
+const DEFAULT_WEEKLY_HOURS={0:{open:true,start:'13:00',end:'20:00'},1:{open:false,start:'13:00',end:'20:00'},2:{open:true,start:'13:00',end:'20:00'},3:{open:true,start:'13:00',end:'20:00'},4:{open:true,start:'13:00',end:'20:00'},5:{open:true,start:'13:00',end:'20:00'},6:{open:true,start:'13:00',end:'20:00'}}
+const hoursFor=(settings,day)=>settings?.weekly_hours?.[day]||DEFAULT_WEEKLY_HOURS[day]
+const minutesOf=(time)=>{const [h,m]=String(time||'').split(':').map(Number);return h*60+m}
+const getStoreScheduleState=(now=new Date(),settings=null)=>{
+  const day=now.getDay(), current=now.getHours()*60+now.getMinutes()
+  const hours=hoursFor(settings,day)
+  const open=Boolean(settings?.store_open!==false&&hours?.open&&current>=minutesOf(hours.start)&&current<minutesOf(hours.end))
+  return {open,period:open?'open':'closed',scheduleDay:'today',offsetDays:0,targetDay:day}
 }
-const getPickupSlots=(now=new Date())=>{
-  const schedule=getStoreScheduleState(now)
-  const currentMinutes=now.getHours()*60+now.getMinutes()
-  const prefix=schedule.offsetDays===0?'':schedule.offsetDays===1?'Mañana · ':`${SERVICE_DAY_LABELS[schedule.targetDay]} · `
-  const slots=[]
-  for(let minutes=PICKUP_OPEN_MINUTES;minutes<=PICKUP_CLOSE_MINUTES;minutes+=30){
-    if(schedule.offsetDays===0&&schedule.open&&minutes<=currentMinutes)continue
-    slots.push({value:`${prefix}${formatPickupMinutes(minutes)}`,label:formatPickupMinutes(minutes)})
+const getPickupSlots=(now=new Date(),settings=null)=>{
+  const schedule=getStoreScheduleState(now,settings),currentMinutes=now.getHours()*60+now.getMinutes()
+  let slots=[], selectedOffset=0, selectedDay=now.getDay()
+  // El cliente puede programar para el próximo día con servicio (máximo una semana).
+  for(let offset=0;offset<8;offset++){
+    const target=new Date(now.getFullYear(),now.getMonth(),now.getDate()+offset)
+    const day=target.getDay(),hours=hoursFor(settings,day)
+    if(!hours?.open)continue
+    const start=minutesOf(hours.start),end=minutesOf(hours.end)
+    if(!Number.isFinite(start)||!Number.isFinite(end)||start>=end)continue
+    const prefix=offset===0?'':offset===1?'Mañana · ':`${SERVICE_DAY_LABELS[day]} · `
+    const minLead=30 // Evita horarios que ya están a punto de pasar.
+    for(let minutes=Math.ceil(start/30)*30;minutes<=end;minutes+=30){
+      if(offset===0&&minutes<=currentMinutes+minLead)continue
+      slots.push({value:`${prefix}${formatPickupMinutes(minutes)}`,label:formatPickupMinutes(minutes)})
+    }
+    if(slots.length){selectedOffset=offset;selectedDay=day;break}
   }
-  const pickupTitle=schedule.open
-    ?'Recoger más tarde'
-    :schedule.offsetDays===0
-      ?'Recoger hoy'
-      :schedule.offsetDays===1
-        ?'Recoger mañana'
-        :`Recoger ${SERVICE_DAY_NAMES[schedule.targetDay]}`
-  const pickupSubtitle=schedule.offsetDays===0
-    ?'Elige una hora para hoy'
-    :schedule.offsetDays===1
-      ?'Elige una hora para mañana'
-      :`Elige una hora para el ${SERVICE_DAY_NAMES[schedule.targetDay]}`
-  const slotsTitle=schedule.offsetDays===0
-    ?'Selecciona la hora'
-    :schedule.offsetDays===1
-      ?'Horarios de mañana'
-      :`Horarios del ${SERVICE_DAY_NAMES[schedule.targetDay]}`
-  return {schedule,slots,pickupTitle,pickupSubtitle,slotsTitle}
+  const title=selectedOffset===0?'Recibir más tarde':selectedOffset===1?'Programar para mañana':`Programar para ${SERVICE_DAY_NAMES[selectedDay]}`
+  return {schedule,slots,pickupTitle:title,pickupSubtitle:'Selecciona una hora disponible',slotsTitle:'Horarios disponibles'}
+}
+const customerOrderState=(status,pickupLabel=ASAP_PICKUP_LABEL,deliveryType='pickup')=>{
+  const delivery=deliveryType==='delivery',scheduled=!isAsapPickup(pickupLabel)
+  if(status==='En camino')return {label:'En camino',eta:'Tu pedido está en ruta hacia tu domicilio.',step:1}
+  if(status==='Listo'&&delivery)return {label:'Preparando',eta:scheduled?`Entrega programada para las ${displayPickupLabel(pickupLabel)}`:'Estamos preparando tu pedido para enviarlo.',step:0}
+  if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:1}
+  if(status==='Entregado')return {label:'Entregado',eta:'Pedido completado.',step:2}
+  if(status==='Cancelado')return {label:'Cancelado',eta:'Este pedido fue cancelado.',step:0}
+  if(delivery)return {label:'Preparando',eta:scheduled?`Llegará a tu domicilio en el horario programado: ${displayPickupLabel(pickupLabel)}`:'Llegando a tu domicilio en aproximadamente 25 minutos.',step:0}
+  return {label:'Preparando',eta:scheduled?`Recogida programada: ${displayPickupLabel(pickupLabel)}`:'Listo en 10–15 minutos',step:0}
 }
 const formatPersonName=(value='')=>String(value||'')
   .trim()
@@ -218,14 +205,6 @@ const screenFromHash=()=>{
 
 const CUSTOMER_ORDER_SELECT='delivery_type,delivery_address,delivery_zone,delivery_fee,tip_amount,requested_payment,id,order_number,customer_name,customer_phone,pickup_label,payment_method,payment_status,total,status,cashback_used,first_order_discount,created_at,order_items(id,item_type,name,quantity,unit_price,base_name,guisados,extras,variant)'
 const ACTIVE_ORDER_STATUSES=['Nuevo','Preparando','Listo','En camino']
-const customerOrderState=(status,pickupLabel=ASAP_PICKUP_LABEL)=>{
-  if(status==='En camino')return {label:'En camino',eta:'Tu pedido va con el repartidor.',step:1}
-  if(status==='Listo')return {label:'Listo para recoger',eta:'Tu pedido está listo. Ya puedes pasar por él.',step:1}
-  if(status==='Entregado')return {label:'Entregado',eta:'Pedido completado.',step:2}
-  if(status==='Cancelado')return {label:'Cancelado',eta:'Este pedido fue cancelado.',step:0}
-  const pickup=displayPickupLabel(pickupLabel||ASAP_PICKUP_LABEL)
-  return {label:'Preparando',eta:isAsapPickup(pickup)?'Listo en 10–15 minutos':`Recogida programada: ${pickup}`,step:0}
-}
 const orderIdOf=(order)=>order?.id||order?.order_id||null
 
 function App(){
@@ -274,6 +253,7 @@ function App(){
   const [catalog,setCatalog]=useState({})
   const [catalogRows,setCatalogRows]=useState(null)
   const [storeSettings,setStoreSettings]=useState(null)
+  const minimumOrder=Number(storeSettings?.minimum_order_amount??200)
 
   const selectedAddress=addresses.find(a=>a.id===addressId)||null
   const selectedZone=zones.find(z=>z.id===selectedAddress?.zone_id)||null
@@ -474,6 +454,7 @@ function App(){
 
   const continueToCheckout=()=>{
     if(!authReady)return
+    if(cartTotal<minimumOrder){window.alert(`El pedido mínimo es de $${minimumOrder.toFixed(2)} en productos. Te faltan $${(minimumOrder-cartTotal).toFixed(2)}.`);return}
     setCartOpen(false)
     if(session?.user){setScreen('cart');window.scrollTo(0,0);return}
     setAuthIntent('checkout')
@@ -701,7 +682,10 @@ function App(){
   const placeOrder=async()=>{
     setPlaceError('')
     if(!supabaseConfigured || !supabase){setPlaceError('Falta conectar Supabase en Vercel.');return}
-    if(storeSettings && (!storeSettings.store_open || !storeSettings.pickup_enabled)){setPlaceError('La tienda no está recibiendo pedidos en este momento.');return}
+    if(storeSettings && (!storeSettings.store_open || (deliveryType==='pickup'&&!storeSettings.pickup_enabled))){setPlaceError('La tienda no está recibiendo pedidos en este momento.');return}
+    if(cartTotal<minimumOrder){setPlaceError(`El pedido mínimo es de $${minimumOrder.toFixed(2)} en productos.`);return}
+    if(isAsapPickup(pickup)&&!getStoreScheduleState(new Date(),storeSettings).open){setPlaceError('La tienda está cerrada. Selecciona un horario programado.');return}
+    if(!isAsapPickup(pickup)&&!getPickupSlots(new Date(),storeSettings).slots.some(slot=>slot.value===pickup)){setPlaceError('El horario seleccionado ya no está disponible. Elige otro.');return}
     if(!session?.user){setPlaceError('Inicia sesión para confirmar tu pedido.');setScreen('home');setAuthIntent('checkout');setProfileOpen(true);return}
     if(deliveryType==='delivery'&&!selectedAddress){setPlaceError('Selecciona o agrega tu dirección.');return}
     if(!Number.isFinite(tipAmount)||tipAmount<0||tipAmount>100000){setPlaceError('Revisa la propina.');return}
@@ -832,7 +816,7 @@ function App(){
     let alive=true
     let timer=null
 
-    if(screen!=='cart'||payment!=='online'||!orderPayload.length||firstOrderGiftLoading||(deliveryType==='delivery'&&!addressId)){
+    if(screen!=='cart'||payment!=='online'||cartTotal<minimumOrder||!orderPayload.length||firstOrderGiftLoading||(deliveryType==='delivery'&&!addressId)){
       if(stripeCheckout?.order_id){
         const staleOrderId=stripeCheckout.order_id
         setStripeCheckout(null)
@@ -880,7 +864,7 @@ function App(){
       alive=false
       if(timer)window.clearTimeout(timer)
     }
-  },[screen,payment,session?.user?.id,stripeDraftKey,firstOrderGiftLoading])
+  },[screen,payment,session?.user?.id,stripeDraftKey,firstOrderGiftLoading,cartTotal,minimumOrder])
   const goHome=()=>{
     if(typeof window!=='undefined'&&window.location.hash){
       window.history.replaceState(null,'',`${window.location.pathname}${window.location.search}`)
@@ -912,21 +896,21 @@ function App(){
             <button type="button" className="address-menu-add" onClick={()=>{if(!session?.user){setAddressMenuOpen(false);setAuthIntent('profile');setProfileOpen(true)}else openNewAddress()}}><Plus size={18}/> Agregar dirección</button>
           </div></>}
         </div>
-        {activeOrder&&<button className={`order-tracker-button ${activeOrder.status==='Listo'?'ready':''}`} onClick={()=>{setScreen('tracking');window.scrollTo(0,0)}} aria-label="Ver estado de mi pedido" title={customerOrderState(activeOrder.status).label}><Clock3 size={21}/><i /></button>}
+        {activeOrder&&<button className={`order-tracker-button ${activeOrder.status==='Listo'&&activeOrder.delivery_type!=='delivery'?'ready':''}`} onClick={()=>{setScreen('tracking');window.scrollTo(0,0)}} aria-label="Ver estado de mi pedido" title={customerOrderState(activeOrder.status,activeOrder.pickup_label,activeOrder.delivery_type).label}><Clock3 size={21}/><i /></button>}
       </div>
     </header>}
 
     {screen==='home' && <>
-      <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} catalog={catalog} menuData={clientMenu} />
+      <Home storeSettings={storeSettings} onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} catalog={catalog} menuData={clientMenu} />
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
-      {cartOpen && <CartSheet deliveryType={deliveryType} selectedZone={selectedZone} deliveryFee={deliveryFee} items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
+      {cartOpen && <CartSheet minimumOrder={minimumOrder} deliveryType={deliveryType} selectedZone={selectedZone} deliveryFee={deliveryFee} items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
     </>}
     {screen==='tracking' && <OrderTracker order={activeOrder} loading={activeOrderLoading} onBack={goHome} />}
     {screen==='privacy' && <LegalPage type="privacy" onBack={goHome} />}
     {screen==='terms' && <LegalPage type="terms" onBack={goHome} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='cart' && !session?.user && authReady && <div className="auth-checkout-gate"><p>Inicia sesión para continuar con tu pedido.</p><button className="primary" onClick={()=>{setScreen('home');setAuthIntent('checkout');setProfileOpen(true)}}>Iniciar sesión</button></div>}
-    {screen==='cart' && session?.user && <Cart deliveryType={deliveryType} setDeliveryType={setDeliveryType} addresses={addresses} addressId={addressId} setAddressId={setAddressId} selectedZone={selectedZone} deliveryFee={deliveryFee} onAddress={openNewAddress} tipMode={tipMode} setTipMode={setTipMode} customTip={customTip} setCustomTip={setCustomTip} tipAmount={tipAmount} items={displayCart} total={cartTotal} firstOrderGiftDiscount={firstOrderGiftDiscount} firstOrderGiftLoading={firstOrderGiftLoading} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
+    {screen==='cart' && session?.user && <Cart storeSettings={storeSettings} minimumOrder={minimumOrder} deliveryType={deliveryType} setDeliveryType={setDeliveryType} addresses={addresses} addressId={addressId} setAddressId={setAddressId} selectedZone={selectedZone} deliveryFee={deliveryFee} onAddress={openNewAddress} tipMode={tipMode} setTipMode={setTipMode} customTip={customTip} setCustomTip={setCustomTip} tipAmount={tipAmount} items={displayCart} total={cartTotal} firstOrderGiftDiscount={firstOrderGiftDiscount} firstOrderGiftLoading={firstOrderGiftLoading} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
     {addressModal&&<AddressModal zones={zones} address={editingAddress} onClose={()=>{setAddressModal(false);setEditingAddress(null)}} onSaved={async(id)=>{await refreshAddresses();if(id){setAddressId(id);setDeliveryType('delivery')}setAddressModal(false);setEditingAddress(null)}}/>}
     {profileOpen && <ProfileDrawer
@@ -944,7 +928,7 @@ function App(){
   </div>
 }
 
-function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
+function Home({storeSettings,onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
   const {products:PRODUCTOS,complements:COMPLEMENTOS_HOME,takeaway:GUISADOS_PARA_LLEVAR,drinks:BEBIDAS_HOME,flavors:REFRESCO_SABORES}=menuData
   const [takeawaySize,setTakeawaySize]=useState('half')
   const [sodaOpen,setSodaOpen]=useState(false)
@@ -953,7 +937,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
     const timer=window.setInterval(()=>setHomeClock(Date.now()),30000)
     return ()=>window.clearInterval(timer)
   },[])
-  const storeSchedule=getStoreScheduleState(new Date(homeClock))
+  const storeSchedule=getStoreScheduleState(new Date(homeClock),storeSettings)
   const goToMenu=()=>document.getElementById('menu-chinito')?.scrollIntoView({behavior:'smooth',block:'start'})
   const variant=takeawaySize==='half'?'1/2 litro':'1 litro'
   const available=(slug)=>catalog[slug]?.active !== false
@@ -964,13 +948,13 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
   }
   return <main>
     <section className="home-hero-image" onClick={goToMenu} role="button" tabIndex={0} onKeyDown={(e)=>{if(e.key==='Enter'||e.key===' ') goToMenu()}} aria-label="Ver menú de Chi-nito">
-      <img src="/img/inicio.jpg" alt="Arma tu Chi-nito - Solo pickup" />
+      <img src="/img/inicio.jpg" alt="Arma tu Chi-nito" />
     </section>
 
     <section className="section-wrap" id="menu-chinito">
       {!storeSchedule.open&&<div className="store-closed-banner" role="status">
         <div className="store-closed-icon"><Clock3 size={20}/></div>
-        <div><strong>Estamos cerrados</strong><span>Nuestro horario es de martes a domingo de 13:00 a 20:00, pero puedes programar tu pedido.</span></div>
+        <div><strong>Estamos cerrados</strong><span>Consulta los horarios de atención. Puedes programar tu pedido para el próximo horario disponible.</span></div>
       </div>}
       <div className="section-head"><div><h2>Nuestros Chi-nitos</h2></div><span className="muted">1 base + tus guisados favoritos</span></div>
       <div className="product-grid">{PRODUCTOS.map((p)=>{const ok=available(p.slug);const pPrice=price(p.slug,p.price);return <article className={`product-card ${ok?'':'soldout-card'}`} key={p.id}>
@@ -1071,7 +1055,7 @@ function Home({onPick,onAddSimple,onRemoveSimple,getCartQty,catalog,menuData}){
           <a href="#terms">Términos y condiciones</a>
         </div>
         <div className="app-footer-pickup">
-          <strong>Solo pickup</strong>
+          <strong>Pickup y domicilio</strong>
           <span>Haz tu pedido en línea y recógelo en sucursal.</span>
           <a className="app-footer-phone" href="tel:+524412496395">441 249 6395</a>
         </div>
@@ -1123,7 +1107,7 @@ function LegalPage({type,onBack}){
       <section><h2>1. Uso de la app</h2><p>Chi-nito permite consultar el menú, personalizar productos, crear pedidos para recoger en sucursal y administrar beneficios asociados a tu cuenta. Al registrarte y usar la app aceptas estos términos.</p></section>
       <section><h2>2. Cuenta</h2><p>Debes proporcionar información correcta y mantener la confidencialidad de tu contraseña. Eres responsable del uso de tu cuenta mientras tu sesión permanezca iniciada en un dispositivo.</p></section>
       <section><h2>3. Menú, precios y disponibilidad</h2><p>Los productos, ingredientes, precios y disponibilidad pueden cambiar. El importe mostrado en el checkout al momento de confirmar es el que corresponde al pedido, salvo un error evidente que requiera corrección antes de prepararlo.</p></section>
-      <section><h2>4. Pedidos y pickup</h2><p>Los pedidos realizados en la app son para recoger en sucursal. Los horarios mostrados son estimados y pueden variar según la carga de cocina, disponibilidad de productos u otras circunstancias operativas.</p></section>
+      <section><h2>4. Pedidos, pickup y domicilio</h2><p>Los pedidos pueden ser para recoger o a domicilio en zonas habilitadas. Los horarios son estimados y pueden cambiar por disponibilidad, tráfico o carga de cocina.</p></section>
       <section><h2>5. Pagos</h2><p>La app puede ofrecer las formas de pago que estén habilitadas en cada momento. La disponibilidad de un método no garantiza que permanezca activo de forma permanente.</p></section>
       <section><h2>6. Cashback</h2><p>Cuando el programa esté activo, acumulas $1 de cashback por cada $10 completos correspondientes a un pedido que se complete. El saldo disponible puede aplicarse en el checkout hasta el límite permitido por el total del pedido. Los movimientos pueden ajustarse cuando un pedido sea cancelado, reembolsado o corregido.</p></section>
       <section><h2>7. Cancelaciones y reembolsos</h2><p>Las solicitudes de cancelación o reembolso se revisan de acuerdo con el estado del pedido, su preparación y el medio de pago utilizado. Una vez que cocina ha avanzado en la preparación, puede no ser posible cancelar íntegramente el pedido.</p></section>
@@ -1176,7 +1160,7 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extrasQ
 function Step({num,title,subtitle,right,children}){return <section className="step"><div className={`step-head ${!num?'optional-step-head':''}`}>{num&&<span className="step-num">{num}</span>}<div><h3>{title}</h3><p>{subtitle}</p></div>{right&&<div className="step-right">{right}</div>}</div>{children}</section>}
 
 
-function CartSheet({deliveryType,selectedZone,deliveryFee,items,total,onClose,onChangeQty,onRemove,onContinue}){
+function CartSheet({minimumOrder,deliveryType,selectedZone,deliveryFee,items,total,onClose,onChangeQty,onRemove,onContinue}){
   return <div className="cart-sheet-overlay" onClick={onClose}>
     <section className="cart-sheet" onClick={e=>e.stopPropagation()} aria-label="Carrito">
       <div className="cart-sheet-handle" />
@@ -1208,15 +1192,16 @@ function CartSheet({deliveryType,selectedZone,deliveryFee,items,total,onClose,on
         })}
       </div>
       {deliveryType==='delivery'&&<div className="cart-sheet-shipping"><span>Envío {selectedZone?.name||'a domicilio'}</span><strong>+${deliveryFee.toFixed(2)}</strong></div>}
+      {total<minimumOrder&&<p className="cart-minimum-warning">Pedido mínimo de ${minimumOrder.toFixed(2)} en productos. Agrega ${(minimumOrder-total).toFixed(2)} más para continuar.</p>}
       <div className="cart-sheet-footer">
         <div><span>Total</span><strong>${(total+deliveryFee).toFixed(2)}</strong></div>
-        <button className="primary cart-sheet-continue" onClick={onContinue}>Continuar <ChevronRight size={18}/></button>
+        <button className="primary cart-sheet-continue" disabled={total<minimumOrder} onClick={onContinue}>Continuar <ChevronRight size={18}/></button>
       </div>
     </section>
   </div>
 }
 
-function Cart({deliveryType,setDeliveryType,addresses,addressId,setAddressId,selectedZone,deliveryFee,onAddress,tipMode,setTipMode,customTip,setCustomTip,tipAmount,items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,stripeClientSecret,stripeLoading,stripeError,stripeReady,onStripeReady,onStripeError,onBack,onPlace,placing,placeError}){
+function Cart({storeSettings,minimumOrder,deliveryType,setDeliveryType,addresses,addressId,setAddressId,selectedZone,deliveryFee,onAddress,tipMode,setTipMode,customTip,setCustomTip,tipAmount,items,total,firstOrderGiftDiscount,firstOrderGiftLoading,cashbackBalance,cashbackLoading,cashbackDiscount,redeemCashback,setRedeemCashback,pickup,setPickup,name,phone,payment,setPayment,stripeClientSecret,stripeLoading,stripeError,stripeReady,onStripeReady,onStripeError,onBack,onPlace,placing,placeError}){
   const finalTotal=Math.max(0,total-firstOrderGiftDiscount-cashbackDiscount)+deliveryFee+tipAmount
   const itemCount=items.reduce((sum,item)=>sum+Number(item.quantity||0),0)
   const displayName=formatPersonName(name)
@@ -1226,7 +1211,7 @@ function Cart({deliveryType,setDeliveryType,addresses,addressId,setAddressId,sel
     const timer=window.setInterval(()=>setPickupClock(Date.now()),30000)
     return ()=>window.clearInterval(timer)
   },[])
-  const pickupSchedule=useMemo(()=>getPickupSlots(new Date(pickupClock)),[pickupClock])
+  const pickupSchedule=useMemo(()=>getPickupSlots(new Date(pickupClock),storeSettings),[pickupClock,storeSettings])
   const storeIsOpen=pickupSchedule.schedule.open
   const pickupSlots=pickupSchedule.slots
   const pickupValues=useMemo(()=>pickupSlots.map(slot=>slot.value),[pickupSlots])
@@ -1250,7 +1235,7 @@ function Cart({deliveryType,setDeliveryType,addresses,addressId,setAddressId,sel
   return <main className="page cart-page checkout-page checkout-v2">
     <header className="checkout-topline checkout-v2-top">
       <button className="checkout-nav-btn" onClick={onBack} aria-label="Volver"><ArrowLeft size={21}/></button>
-      <div><strong>Finalizar pedido</strong><span>Solo pickup</span></div>
+      <div><strong>Finalizar pedido</strong><span>Pickup o domicilio</span></div>
       <span aria-hidden="true" />
     </header>
 
@@ -1267,7 +1252,7 @@ function Cart({deliveryType,setDeliveryType,addresses,addressId,setAddressId,sel
         <section className="checkout-section checkout-contact-section">
           <div className="checkout-section-title">
             <span className="checkout-section-number">1</span>
-            <div><h2>Datos para recoger</h2><p>Usaremos los datos guardados en tu cuenta.</p></div>
+            <div><h2>Datos del cliente</h2><p>Usaremos los datos guardados en tu cuenta.</p></div>
           </div>
           <div className="checkout-contact-strip">
             <div><span>Nombre</span><strong>{displayName||'Completa tu perfil'}</strong></div>
@@ -1281,21 +1266,21 @@ function Cart({deliveryType,setDeliveryType,addresses,addressId,setAddressId,sel
             <div><h2>¿Cómo recibirás tu pedido?</h2><p>Elige recogerlo o enviarlo a domicilio.</p></div>
           </div>
           <DeliverySwitch type={deliveryType} setType={setDeliveryType}/>{deliveryType==='delivery'&&<div className="checkout-address-picker"><div className="checkout-address-heading"><MapPin size={18}/><strong>¿A dónde enviamos tu pedido?</strong></div><div className="checkout-address-options">{addresses.map(a=><button key={a.id} type="button" className={`checkout-address-card ${addressId===a.id?'selected':''}`} onClick={()=>setAddressId(a.id)}><span className="checkout-address-marker"><MapPin size={17}/></span><span className="checkout-address-copy"><b>{a.label}</b><small>{a.street} {a.exterior_number}{a.interior_number?`, int. ${a.interior_number}`:''}</small></span><span className="checkout-address-radio">{addressId===a.id&&<Check size={13}/>}</span></button>)}</div><button className="checkout-add-address" type="button" onClick={onAddress}><Plus size={18}/> Agregar otra dirección</button></div>}
-          {deliveryType==='pickup'&&<><div className="checkout-pickup-option selected">
+          {<>{deliveryType==='pickup'&&<div className="checkout-pickup-option selected">
             <div className="checkout-option-icon"><ShoppingBag size={20}/></div>
             <div className="checkout-pickup-copy"><strong>Recoger en sucursal</strong><span>Sin costo de servicio</span></div>
             <span className="checkout-selected-dot"><Check size={12}/></span>
-          </div>
+          </div>}
           <div className="checkout-pickup-time">
-            <span className="checkout-pickup-time-label"><Clock3 size={15}/> Hora de pickup</span>
+            <span className="checkout-pickup-time-label"><Clock3 size={15}/> {deliveryType==='delivery'?'Hora de entrega a domicilio':'Hora de pickup'}</span>
             <div className={`checkout-pickup-mode ${!storeIsOpen?'closed-hours':''}`}>
               {storeIsOpen&&<button type="button" className={pickupMode==='asap'?'selected':''} onClick={()=>{setPickupMode('asap');setPickup(ASAP_PICKUP_LABEL)}}>
                 <span className="checkout-option-radio"><i /></span>
-                <span><b>Lo antes posible</b><small>Listo en 10–15 min</small></span>
+                <span><b>Lo antes posible</b><small>{deliveryType==='delivery'?'Entrega aproximada en 25 min':'Listo en 10–15 min'}</small></span>
               </button>}
               <button type="button" className={pickupMode==='later'?'selected':''} onClick={()=>{setPickupMode('later');if((pickup===ASAP_PICKUP_LABEL||!pickupValues.includes(pickup))&&pickupSlots.length)setPickup(pickupSlots[0].value)}}>
                 <span className="checkout-option-radio"><i /></span>
-                <span><b>{pickupSchedule.pickupTitle}</b><small>{pickupSchedule.pickupSubtitle}</small></span>
+                <span><b>{deliveryType==='delivery'?pickupSchedule.pickupTitle:pickupSchedule.pickupTitle.replace('Recibir','Recoger')}</b><small>{pickupSchedule.pickupSubtitle}</small></span>
               </button>
             </div>
             {pickupMode==='later'&&<>
@@ -1403,7 +1388,7 @@ function Cart({deliveryType,setDeliveryType,addresses,addressId,setAddressId,sel
         </div>
         <div className="checkout-summary-total"><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
         {placeError&&<p className="checkout-error">{placeError}</p>}
-        <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||!name||!phone||(deliveryType==='delivery'&&!addressId)||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>
+        <button className="primary checkout-confirm checkout-desktop-confirm" disabled={!items.length||total<minimumOrder||!name||!phone||(deliveryType==='delivery'&&!addressId)||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>
           {placing?(payment==='online'?'Procesando pago…':'Creando pedido…'):(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar pedido')} {!placing&&<ChevronRight size={18}/>}
         </button>
         <p className="checkout-legal-note">{payment==='online'?'Tu tarjeta se captura aquí mismo. Si tu banco solicita 3D Secure, Stripe puede abrir una verificación y regresarte automáticamente a Chi-nito.':'Al confirmar, tu pedido se enviará directamente a cocina.'}</p>
@@ -1412,14 +1397,14 @@ function Cart({deliveryType,setDeliveryType,addresses,addressId,setAddressId,sel
 
     <div className="checkout-mobile-bar">
       <div><span>Total</span><strong>${finalTotal.toFixed(2)}</strong></div>
-      <button className="primary" disabled={!items.length||!name||!phone||(deliveryType==='delivery'&&!addressId)||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar')} <ChevronRight size={18}/></button>
+      <button className="primary" disabled={!items.length||total<minimumOrder||!name||!phone||(deliveryType==='delivery'&&!addressId)||placing||cashbackLoading||firstOrderGiftLoading||(payment==='online'&&(!stripeReady||stripeLoading))} onClick={onPlace}>{placing?'Procesando…':(payment==='online'?`Pagar $${finalTotal.toFixed(2)}`:'Confirmar')} <ChevronRight size={18}/></button>
     </div>
   </main>
 }
 
-function OrderStatusSteps({status}){
-  const state=customerOrderState(status)
-  const steps=['Preparando','Listo / En camino']
+function OrderStatusSteps({status,deliveryType='pickup'}){
+  const state=customerOrderState(status,ASAP_PICKUP_LABEL,deliveryType)
+  const steps=['Preparando',deliveryType==='delivery'?'En camino':'Listo para recoger']
   return <div className="order-status-steps">{steps.map((label,index)=>{
     const done=state.step>index
     const current=state.step===index
@@ -1438,10 +1423,10 @@ function OrderItemsSummary({items=[]}){
 function OrderTracker({order,loading,onBack}){
   if(loading&&!order)return <main className="tracking-page"><div className="tracking-loading"><Clock3 size={28}/><b>Buscando tu pedido…</b></div></main>
   if(!order)return <main className="tracking-page"><button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button><div className="tracking-empty"><ShoppingBag size={38}/><h1>No tienes un pedido activo</h1><p>Cuando hagas un pedido podrás seguir su avance aquí.</p><button className="primary" onClick={onBack}>Ver menú</button></div></main>
-  const state=customerOrderState(order.status,order.pickup_label)
+  const state=customerOrderState(order.status,order.pickup_label,order.delivery_type)
   return <main className="tracking-page">
     <button className="tracking-back" onClick={onBack}><ArrowLeft size={19}/> Inicio</button>
-    <section className={`tracking-hero ${order.status==='Listo'?'ready':''}`}><div className="tracking-live"><i/> PEDIDO EN VIVO</div><div className="tracking-hero-main"><div><span>{order.order_number}</span><h1>{state.label}</h1><p>{state.eta}</p></div><Clock3 size={42}/></div><OrderStatusSteps status={order.status}/></section>
+    <section className={`tracking-hero ${order.status==='Listo'&&order.delivery_type!=='delivery'?'ready':''}`}><div className="tracking-live"><i/> PEDIDO EN VIVO</div><div className="tracking-hero-main"><div><span>{order.order_number}</span><h1>{state.label}</h1><p>{state.eta}</p></div><Clock3 size={42}/></div><OrderStatusSteps status={order.status} deliveryType={order.delivery_type}/></section>
     <div className="tracking-grid"><section className="tracking-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Tu pedido</h2><p>Lo que estamos preparando</p></div></div><OrderItemsSummary items={order.order_items||[]}/></section><section className="tracking-card tracking-details"><h2>Detalles</h2><div><span>Pedido a nombre de</span><b>{formatPersonName(order.customer_name||'')}</b></div><div><span>{order.delivery_type==='delivery'?'Domicilio':'Pickup'}</span><b>{order.delivery_type==='delivery'?`${order.delivery_address?.street||''} ${order.delivery_address?.exterior_number||''} · ${order.delivery_zone||''}`:displayPickupLabel(order.pickup_label||ASAP_PICKUP_LABEL)}</b></div><div><span>Pago</span><b>{order.payment_method==='online'?'Pago en línea':order.requested_payment==='terminal'?'Terminal':'Efectivo'}</b></div><div><span>Total de productos</span><strong>${Number(order.total||0).toFixed(2)}</strong></div>{Number(order.delivery_fee||0)>0&&<div><span>Envío</span><strong>${Number(order.delivery_fee||0).toFixed(2)}</strong></div>}{Number(order.tip_amount||0)>0&&<div><span>Propina</span><strong>${Number(order.tip_amount||0).toFixed(2)}</strong></div>}<div><span>Total a pagar</span><strong>${(Number(order.total||0)+Number(order.delivery_fee||0)+Number(order.tip_amount||0)).toFixed(2)}</strong></div></section></div>
     <section className="tracking-help">
       <div><span>¿Necesitas ayuda?</span><b>Envíanos un WhatsApp</b></div>
@@ -1453,12 +1438,12 @@ function OrderTracker({order,loading,onBack}){
 function Success({order,onReset}){
   const pickupLabel=displayPickupLabel(order?.pickup_label||ASAP_PICKUP_LABEL)
   const scheduledPickup=!isAsapPickup(pickupLabel)
-  const state=customerOrderState(order?.status,order?.pickup_label)
+  const state=customerOrderState(order?.status,order?.pickup_label,order?.delivery_type)
   return <main className="confirmed-page">
-    <section className={`confirmed-hero ${order?.status==='Listo'?'ready':''}`}><div className="confirmed-check"><Check size={30}/></div><span className="confirmed-kicker">PEDIDO CONFIRMADO</span><h1>{state.label}</h1><p>{state.eta}</p><div className="confirmed-order-number"><span>Número de pedido</span><strong>{order?.order_number||'Confirmado'}</strong></div><OrderStatusSteps status={order?.status}/></section>
-    <section className="confirmed-info-strip"><div><small>Pickup</small><b>{pickupLabel}</b></div><div><small>Cliente</small><b>{formatPersonName(order?.customer_name||'')}</b></div><div><small>Total</small><strong>${Number(order?.total||0).toFixed(2)}</strong></div></section>
+    <section className={`confirmed-hero ${order?.status==='Listo'&&order?.delivery_type!=='delivery'?'ready':''}`}><div className="confirmed-check"><Check size={30}/></div><span className="confirmed-kicker">PEDIDO CONFIRMADO</span><h1>{state.label}</h1><p>{state.eta}</p><div className="confirmed-order-number"><span>Número de pedido</span><strong>{order?.order_number||'Confirmado'}</strong></div><OrderStatusSteps status={order?.status} deliveryType={order?.delivery_type}/></section>
+    <section className="confirmed-info-strip"><div><small>{order?.delivery_type==='delivery'?'Entrega a domicilio':'Pickup'}</small><b>{order?.delivery_type==='delivery'?(scheduledPickup?`Entrega programada: ${pickupLabel}`:'Aproximadamente 25 minutos'):pickupLabel}</b></div><div><small>Cliente</small><b>{formatPersonName(order?.customer_name||'')}</b></div><div><small>Total</small><strong>${Number(order?.total||0).toFixed(2)}</strong></div></section>
     <section className="confirmed-order-card"><div className="tracking-card-title"><ShoppingBag size={18}/><div><h2>Resumen del pedido</h2><p>Cocina ya recibió estos productos</p></div></div><OrderItemsSummary items={order?.order_items||[]}/></section>
-    <div className="confirmed-note"><Clock3 size={18}/><div><b>{order?.status==='Listo'?'Tu pedido ya está listo para recoger':scheduledPickup?`Recogida programada: ${pickupLabel}`:'Tiempo estimado: 10–15 minutos'}</b><span>{order?.status==='Listo'?'Puedes pasar por tu pedido. Muéstranos tu número de orden al llegar.':scheduledPickup?'Tu pedido se preparará para que esté listo a la hora seleccionada. El estado se actualiza automáticamente.':'El estado se actualiza automáticamente. Cuando esté listo verás “Listo para recoger”.'}</span></div></div>
+    <div className="confirmed-note"><Clock3 size={18}/><div><b>{order?.delivery_type==='delivery'?(scheduledPickup?`Llegará a tu domicilio en el horario programado: ${pickupLabel}`:'Llegando a tu domicilio en aproximadamente 25 minutos'):order?.status==='Listo'?'Tu pedido ya está listo para recoger':scheduledPickup?`Recogida programada: ${pickupLabel}`:'Tiempo estimado: 10–15 minutos'}</b><span>{order?.delivery_type==='delivery'?'El estado cambiará a “En camino” cuando el repartidor salga a ruta.':order?.status==='Listo'?'Puedes pasar por tu pedido. Muéstranos tu número de orden al llegar.':scheduledPickup?'Tu pedido se preparará para que esté listo a la hora seleccionada. El estado se actualiza automáticamente.':'El estado se actualiza automáticamente. Cuando esté listo verás “Listo para recoger”.'}</span></div></div>
     <button className="primary confirmed-home-button" onClick={onReset}>Volver al inicio</button>
   </main>
 }

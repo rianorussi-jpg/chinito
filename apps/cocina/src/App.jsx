@@ -46,7 +46,7 @@ const minutesUntilPickup=(order,now=Date.now())=>{
 const isWaitingScheduledOrder=(order,now=Date.now())=>{
   if(order?.status==='Listo'||!isScheduledPickup(order?.pickup_label))return false
   const scheduled=scheduledPickupAt(order)
-  return Boolean(scheduled&&scheduled.getTime()-now>15*60*1000)
+  return Boolean(scheduled&&scheduled.getTime()-now>(order?.delivery_type==='delivery'?25:15)*60*1000)
 }
 
 
