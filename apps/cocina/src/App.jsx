@@ -7,6 +7,8 @@ const tableItemSelect='id,batch_id,item_type,catalog_slug,name,quantity,unit_pri
 const tableTabSelect=`id,table_number,status,total,tip_amount,payment_method,cash_received,change_due,card_folio,opened_at,closed_at,updated_at,table_tab_items(${tableItemSelect})`
 const activeStatuses=['Nuevo','Preparando','Listo','En camino']
 const isAppOrder=order=>order?.order_source!=='staff'
+const orderKind=order=>order?.delivery_type==='delivery'?'delivery':isAppOrder(order)?'pickup':'counter'
+const orderKindLabel=order=>orderKind(order)==='delivery'?'A DOMICILIO':orderKind(order)==='pickup'?'PICKUP · APP':'MOSTRADOR · RÁPIDO'
 const elapsedSeconds=(from,to)=>from?Math.max(0,Math.floor((new Date(to).getTime()-new Date(from).getTime())/1000)):0
 const elapsedLabel=seconds=>{
  const hours=Math.floor(seconds/3600),minutes=Math.floor(seconds%3600/60),secs=seconds%60
@@ -966,8 +968,9 @@ function LaneEmpty({icon,title,text}){return <div className="lane-empty">{icon}<
 function Ticket({order,now,onAcknowledge,onDetails,onAdvance}){
  const acknowledged=Boolean(order.kitchen_acknowledged_at)||!isAppOrder(order)
  const isReady=order.status==='Listo'
- return <article className={`ticket compact-ticket ${order.status.toLowerCase()} ${acknowledged?'acknowledged':'unacknowledged'}`}>
-   <div className="ticket-top compact-ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div></div>
+ return <article className={`ticket compact-ticket ${order.status.toLowerCase()} ${acknowledged?'acknowledged':'unacknowledged'} order-kind-${orderKind(order)}`}>
+   <div className="ticket-top compact-ticket-top"><div><span>{order.order_number}</span><b>{order.customer_name}</b></div><span className={`k-order-kind kind-${orderKind(order)}`}>{orderKindLabel(order)}</span></div>
+   <div className="k-order-destination">{orderKind(order)==='delivery'?<>Destino: <strong>{order.delivery_zone||'Domicilio'}</strong></>:orderKind(order)==='pickup'?<>Recoger: <strong>{displayPickupLabel(order.pickup_label)||'En sucursal'}</strong></>:<>Pedido creado en <strong>mostrador</strong></>}</div>
 
    {isAppOrder(order)&&<div className="k-elapsed-timer"><Clock3 size={15}/><span>Tiempo desde pedido</span><b>{elapsedLabel(elapsedSeconds(order.created_at,order.delivered_at||now))}</b></div>}
    <div className="compact-ticket-actions">
@@ -991,9 +994,10 @@ function OrderDetailsModal({order,now,onClose,onAcknowledge,onAdvance}){
  const subtotal=orderSubtotal(order)
  return <div className="order-detail-overlay" onMouseDown={onClose}>
    <section className="order-detail-modal" onMouseDown={e=>e.stopPropagation()}>
-     <header><div><span>PEDIDO {order.order_number}</span><h2>{order.customer_name}</h2><p>{displayPickupLabel(order.pickup_label)} · {order.customer_phone||'Sin teléfono'}</p></div><button onClick={onClose} aria-label="Cerrar"><X size={21}/></button></header>
+     <header><div><span>PEDIDO {order.order_number} · {orderKindLabel(order)}</span><h2>{order.customer_name}</h2><p>{orderKind(order)==='delivery'?`Entrega a domicilio · ${order.delivery_zone||'Zona sin especificar'}`:orderKind(order)==='pickup'?`Recoger en sucursal · ${displayPickupLabel(order.pickup_label)}`:'Pedido de mostrador'}</p></div><button onClick={onClose} aria-label="Cerrar"><X size={21}/></button></header>
      <div className="order-detail-body">
        <div className="order-detail-meta"><div><span>Estado</span><b>{order.status}</b></div><div><span>Pago</span><b>{paymentLabel(order)} · {paymentStatusLabel(order)}</b></div><div><span>Recibido</span><b>{thermalDate(order.created_at)}</b></div></div>
+       <section className="k-customer-detail"><h3>Datos del cliente y entrega</h3><div className="k-customer-detail-grid"><div><span>Cliente</span><strong>{order.customer_name||'Sin nombre'}</strong></div><div><span>Teléfono</span>{order.customer_phone?<a href={`tel:${String(order.customer_phone).replace(/[^+\d]/g,'')}`}>{order.customer_phone}</a>:<strong>Sin teléfono</strong>}</div><div><span>Tipo de pedido</span><strong>{orderKindLabel(order)}</strong></div>{orderKind(order)==='pickup'&&<div><span>Horario de recogida</span><strong>{displayPickupLabel(order.pickup_label)||'Lo antes posible'}</strong></div>}</div>{orderKind(order)==='delivery'&&<div className="k-detail-address"><span>Dirección de entrega</span><strong>{formatDeliveryAddress(order.delivery_address)}</strong><p><b>Colonia:</b> {order.delivery_zone||'Sin colonia'}</p>{order.delivery_address?.name&&<p><b>Guardada como:</b> {order.delivery_address.name}</p>}{order.delivery_address?.references&&<p><b>Referencias:</b> {order.delivery_address.references}</p>}</div>}</section>
        {isAppOrder(order)&&<section className="k-detail-timing"><h3>Tiempo del pedido</h3><div><Clock3 size={17}/><span>Transcurrido desde que llegó</span><strong>{elapsedLabel(elapsedSeconds(order.created_at,order.delivered_at||now))}</strong></div><small>{order.kitchen_acknowledged_at?'Cocina confirmó que recibió el pedido.':'Pendiente de Enterado · la alerta seguirá sonando si está activada.'}</small></section>}
        <section><h3>Productos</h3><div className="detail-items">{(order.order_items||[]).map(i=><KitchenItem item={i} key={i.id}/>)}</div></section>
        <section className="order-financial-detail"><h3>Desglose</h3><div><span>Subtotal</span><b>{thermalMoney(subtotal)}</b></div>{Number(order.rain_delivery_fee||0)>0&&<div><span>Envío con lluvia</span><b>+{thermalMoney(order.rain_delivery_fee)}</b></div>}{Number(order.first_order_discount||0)>0&&<div className="discount"><span>Regalo primer pedido</span><b>−{thermalMoney(order.first_order_discount)}</b></div>}{Number(order.cashback_used||0)>0&&<div className="discount"><span>Cashback</span><b>−{thermalMoney(order.cashback_used)}</b></div>}<div className="total"><span>Total</span><b>{thermalMoney(order.total)}</b></div></section>

@@ -224,3 +224,28 @@
 
 /* Entregas a domicilio */
 .in-route-board{padding:20px;background:#fff;border-radius:22px;margin:18px 0}.in-route-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}.route-card{background:#f5f0eb;border-radius:16px;padding:16px}.route-card div{display:flex;gap:10px;flex-wrap:wrap}.route-card a,.route-card button{background:#ed1a24;color:white;border:0;border-radius:9px;padding:10px;text-decoration:none;font-weight:700}.table-payment-body select,.table-payment-body input{width:100%;padding:10px;border:1px solid #ccc;border-radius:10px}
+
+/* Tipo de pedido visible sin abrir la ficha: gris delivery, verde pickup, crema mostrador.
+   Se conserva el rojo de alerta hasta pulsar Enterado. */
+.compact-ticket.acknowledged.order-kind-delivery{background:#e9ecef;border:2px solid #adb5bd}
+.compact-ticket.acknowledged.order-kind-pickup{background:#e9f5ee;border:2px solid #8ac8a5}
+.compact-ticket.acknowledged.order-kind-counter{background:#fff4df;border:2px solid #e8c784}
+.compact-ticket-top{gap:10px;flex-wrap:wrap}
+.compact-ticket-top>div{min-width:0;flex:1}
+.compact-ticket-top .k-order-kind{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;padding:7px 9px;border-radius:9px;font-size:10px;font-weight:900;letter-spacing:.04em;line-height:1.2}
+.k-order-kind.kind-delivery{background:#34495e;color:#fff}
+.k-order-kind.kind-pickup{background:#137a48;color:#fff}
+.k-order-kind.kind-counter{background:#8b5a18;color:#fff}
+.compact-ticket.unacknowledged .k-order-kind{background:#fff;color:#b7111c}
+.k-order-destination{margin-top:12px;font-size:12px;line-height:1.5;color:#4d4541}
+.k-order-destination strong{color:#181414}
+.compact-ticket.unacknowledged .k-order-destination,.compact-ticket.unacknowledged .k-order-destination strong{color:#fff}
+.k-customer-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.k-customer-detail-grid>div{min-width:0}
+.k-customer-detail-grid span,.k-detail-address>span{display:block;color:#82736b;font-size:10px;text-transform:uppercase;font-weight:800;letter-spacing:.07em;margin-bottom:5px}
+.k-customer-detail-grid strong,.k-customer-detail-grid a{color:#171313;font-size:13px;overflow-wrap:anywhere}
+.k-customer-detail-grid a{text-decoration:underline;text-underline-offset:3px}
+.k-detail-address{background:#edf0f2;border:1px solid #d9e0e4;border-radius:12px;padding:13px;margin-top:13px;overflow-wrap:anywhere}
+.k-detail-address strong{display:block;color:#171313;font-size:14px;line-height:1.5}
+.k-detail-address p{font-size:12px;margin:7px 0 0;color:#393d40}
+@media(max-width:520px){.k-customer-detail-grid{grid-template-columns:1fr}.compact-ticket-top .k-order-kind{font-size:9px;white-space:normal;text-align:center}}
