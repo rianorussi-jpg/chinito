@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Clock3, CreditCard, MapPin, MessageCircle, Minus, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Clock3, CreditCard, MapPin, MessageCircle, Minus, Pencil, Plus, ShoppingBag, Trash2, UserRound, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from './supabase'
 import ProfileDrawer from './ProfileDrawer'
 import StripePaymentFields from './StripePaymentFields'
@@ -250,6 +250,8 @@ function App(){
   const [zones,setZones]=useState([])
   const [addressId,setAddressId]=useState('')
   const [addressModal,setAddressModal]=useState(false)
+  const [editingAddress,setEditingAddress]=useState(null)
+  const [addressActionError,setAddressActionError]=useState('')
   const [addressMenuOpen,setAddressMenuOpen]=useState(false)
   const [tipMode,setTipMode]=useState('0')
   const [customTip,setCustomTip]=useState('')
@@ -281,10 +283,23 @@ function App(){
   const refreshAddresses=useCallback(async()=>{
     if(!supabase||!session?.user)return
     const {data,error}=await supabase.from('customer_addresses').select('*').order('created_at',{ascending:false})
-    if(!error){setAddresses(data||[]);setAddressId(previous=>previous||(data?.[0]?.id||''))}
+    if(!error){setAddresses(data||[]);setAddressId(previous=>(data||[]).some(a=>a.id===previous)?previous:(data?.[0]?.id||''))}
   },[session?.user?.id])
   useEffect(()=>{if(!supabase)return;supabase.from('delivery_zones').select('id,name,fee').eq('active',true).order('name').then(({data})=>setZones(data||[]))},[])
   useEffect(()=>{refreshAddresses()},[refreshAddresses])
+  const openNewAddress=()=>{setEditingAddress(null);setAddressActionError('');setAddressMenuOpen(false);setAddressModal(true)}
+  const openEditAddress=(address)=>{setEditingAddress(address);setAddressActionError('');setAddressMenuOpen(false);setAddressModal(true)}
+  const deleteAddress=async(address)=>{
+    if(!window.confirm(`¿Eliminar la dirección «${address.label}»?`))return
+    setAddressActionError('')
+    const {error}=await supabase.from('customer_addresses').delete().eq('id',address.id)
+    if(error){setAddressActionError('No pudimos eliminar la dirección. '+error.message);return}
+    const remaining=addresses.filter(a=>a.id!==address.id)
+    setAddresses(remaining)
+    if(addressId===address.id){setAddressId(remaining[0]?.id||'');if(!remaining.length)setDeliveryType('pickup')}
+    await refreshAddresses()
+  }
+
 
   // Política y términos funcionan como páginas internas accesibles por hash.
   useEffect(()=>{
@@ -892,8 +907,9 @@ function App(){
           {addressMenuOpen&&<><button type="button" className="address-menu-scrim" aria-label="Cerrar selector de dirección" onClick={()=>setAddressMenuOpen(false)}/><div className="address-top-menu">
             <span className="address-menu-heading">¿Cómo quieres recibir tu pedido?</span>
             <button type="button" className={`address-menu-option ${deliveryType==='pickup'?'selected':''}`} onClick={()=>{setDeliveryType('pickup');setAddressMenuOpen(false)}}><ShoppingBag size={19}/><span><strong>Recoger en sucursal</strong><small>Sin costo de envío</small></span>{deliveryType==='pickup'&&<Check size={18}/>}</button>
-            {addresses.map(address=><button type="button" key={address.id} className={`address-menu-option ${deliveryType==='delivery'&&addressId===address.id?'selected':''}`} onClick={()=>{setAddressId(address.id);setDeliveryType('delivery');setAddressMenuOpen(false)}}><MapPin size={19}/><span><strong>{address.label}</strong><small>{address.street} {address.exterior_number}</small></span>{deliveryType==='delivery'&&addressId===address.id&&<Check size={18}/>}</button>)}
-            <button type="button" className="address-menu-add" onClick={()=>{setAddressMenuOpen(false);if(!session?.user){setAuthIntent('profile');setProfileOpen(true)}else setAddressModal(true)}}><Plus size={18}/> Agregar dirección</button>
+            {addresses.map(address=><div key={address.id} className={`address-menu-entry ${deliveryType==='delivery'&&addressId===address.id?'selected':''}`}><button type="button" className="address-menu-option" onClick={()=>{setAddressId(address.id);setDeliveryType('delivery');setAddressMenuOpen(false)}}><MapPin size={19}/><span><strong>{address.label}</strong><small>{address.street} {address.exterior_number}</small></span>{deliveryType==='delivery'&&addressId===address.id&&<Check size={18}/>}</button><div className="address-entry-actions"><button type="button" aria-label={`Editar ${address.label}`} title="Editar dirección" onClick={()=>openEditAddress(address)}><Pencil size={15}/></button><button type="button" aria-label={`Eliminar ${address.label}`} title="Eliminar dirección" onClick={()=>deleteAddress(address)}><Trash2 size={15}/></button></div></div>)}
+            {addressActionError&&<p className="address-action-error" role="alert">{addressActionError}</p>}
+            <button type="button" className="address-menu-add" onClick={()=>{if(!session?.user){setAddressMenuOpen(false);setAuthIntent('profile');setProfileOpen(true)}else openNewAddress()}}><Plus size={18}/> Agregar dirección</button>
           </div></>}
         </div>
         {activeOrder&&<button className={`order-tracker-button ${activeOrder.status==='Listo'?'ready':''}`} onClick={()=>{setScreen('tracking');window.scrollTo(0,0)}} aria-label="Ver estado de mi pedido" title={customerOrderState(activeOrder.status).label}><Clock3 size={21}/><i /></button>}
@@ -903,16 +919,16 @@ function App(){
     {screen==='home' && <>
       <Home onPick={addProduct} onAddSimple={addSimpleItem} onRemoveSimple={removeSimpleItem} getCartQty={getCartQty} catalog={catalog} menuData={clientMenu} />
       {cartCount>0 && <button className="home-cart-float" onClick={()=>setCartOpen(true)}><ShoppingBag size={19}/><span>Ver carrito</span><b>{cartCount}</b></button>}
-      {cartOpen && <CartSheet deliveryType={deliveryType} setDeliveryType={setDeliveryType} selectedAddress={selectedAddress} onAddress={()=>setAddressModal(true)} deliveryFee={deliveryFee} items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
+      {cartOpen && <CartSheet deliveryType={deliveryType} selectedZone={selectedZone} deliveryFee={deliveryFee} items={displayCart} total={cartTotal} onClose={()=>setCartOpen(false)} onChangeQty={changeCartQty} onRemove={removeCartItem} onContinue={continueToCheckout} />}
     </>}
     {screen==='tracking' && <OrderTracker order={activeOrder} loading={activeOrderLoading} onBack={goHome} />}
     {screen==='privacy' && <LegalPage type="privacy" onBack={goHome} />}
     {screen==='terms' && <LegalPage type="terms" onBack={goHome} />}
     {screen==='builder' && <Builder product={product} base={base} setBase={setBase} guisados={guisados} toggleGuisado={toggleGuisado} tab={tab} setTab={setTab} extrasQty={extrasQty} changeExtraQty={changeExtraQty} ready={ready} catalog={catalog} menuData={clientMenu} onBack={()=>setScreen('home')} onAdd={addConfiguredToCart} />}
     {screen==='cart' && !session?.user && authReady && <div className="auth-checkout-gate"><p>Inicia sesión para continuar con tu pedido.</p><button className="primary" onClick={()=>{setScreen('home');setAuthIntent('checkout');setProfileOpen(true)}}>Iniciar sesión</button></div>}
-    {screen==='cart' && session?.user && <Cart deliveryType={deliveryType} setDeliveryType={setDeliveryType} addresses={addresses} addressId={addressId} setAddressId={setAddressId} selectedZone={selectedZone} deliveryFee={deliveryFee} onAddress={()=>setAddressModal(true)} tipMode={tipMode} setTipMode={setTipMode} customTip={customTip} setCustomTip={setCustomTip} tipAmount={tipAmount} items={displayCart} total={cartTotal} firstOrderGiftDiscount={firstOrderGiftDiscount} firstOrderGiftLoading={firstOrderGiftLoading} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
+    {screen==='cart' && session?.user && <Cart deliveryType={deliveryType} setDeliveryType={setDeliveryType} addresses={addresses} addressId={addressId} setAddressId={setAddressId} selectedZone={selectedZone} deliveryFee={deliveryFee} onAddress={openNewAddress} tipMode={tipMode} setTipMode={setTipMode} customTip={customTip} setCustomTip={setCustomTip} tipAmount={tipAmount} items={displayCart} total={cartTotal} firstOrderGiftDiscount={firstOrderGiftDiscount} firstOrderGiftLoading={firstOrderGiftLoading} cashbackBalance={cashbackBalance} cashbackLoading={cashbackLoading} cashbackDiscount={cashbackDiscount} redeemCashback={redeemCashback} setRedeemCashback={setRedeemCashback} pickup={pickup} setPickup={setPickup} name={name} phone={phone} payment={payment} setPayment={setPayment} stripeClientSecret={stripeCheckout?.client_secret||''} stripeLoading={stripeCheckoutLoading} stripeError={stripeCheckoutError} stripeReady={Boolean(stripeConfirm)} onStripeReady={handleStripeReady} onStripeError={handleStripeElementError} onBack={()=>setScreen('home')} onPlace={placeOrder} placing={placing} placeError={placeError} />}
 
-    {addressModal&&<AddressModal zones={zones} onClose={()=>setAddressModal(false)} onSaved={async(id)=>{await refreshAddresses();if(id){setAddressId(id);setDeliveryType('delivery')}setAddressModal(false)}}/>}
+    {addressModal&&<AddressModal zones={zones} address={editingAddress} onClose={()=>{setAddressModal(false);setEditingAddress(null)}} onSaved={async(id)=>{await refreshAddresses();if(id){setAddressId(id);setDeliveryType('delivery')}setAddressModal(false);setEditingAddress(null)}}/>}
     {profileOpen && <ProfileDrawer
       session={session}
       intent={authIntent}
@@ -1160,7 +1176,7 @@ function Builder({product,base,setBase,guisados,toggleGuisado,tab,setTab,extrasQ
 function Step({num,title,subtitle,right,children}){return <section className="step"><div className={`step-head ${!num?'optional-step-head':''}`}>{num&&<span className="step-num">{num}</span>}<div><h3>{title}</h3><p>{subtitle}</p></div>{right&&<div className="step-right">{right}</div>}</div>{children}</section>}
 
 
-function CartSheet({deliveryType,setDeliveryType,selectedAddress,onAddress,deliveryFee,items,total,onClose,onChangeQty,onRemove,onContinue}){
+function CartSheet({deliveryType,selectedZone,deliveryFee,items,total,onClose,onChangeQty,onRemove,onContinue}){
   return <div className="cart-sheet-overlay" onClick={onClose}>
     <section className="cart-sheet" onClick={e=>e.stopPropagation()} aria-label="Carrito">
       <div className="cart-sheet-handle" />
@@ -1191,9 +1207,9 @@ function CartSheet({deliveryType,setDeliveryType,selectedAddress,onAddress,deliv
           </article>
         })}
       </div>
-      <DeliverySwitch type={deliveryType} setType={setDeliveryType}/>{deliveryType==='delivery'&&<button className="address-select" onClick={onAddress}>{selectedAddress?`${selectedAddress.label} · Envío $${deliveryFee}`:"Agregar dirección"}</button>}
+      {deliveryType==='delivery'&&<div className="cart-sheet-shipping"><span>Envío {selectedZone?.name||'a domicilio'}</span><strong>+${deliveryFee.toFixed(2)}</strong></div>}
       <div className="cart-sheet-footer">
-        <div><span>Total</span><strong>${total}</strong></div>
+        <div><span>Total</span><strong>${(total+deliveryFee).toFixed(2)}</strong></div>
         <button className="primary cart-sheet-continue" onClick={onContinue}>Continuar <ChevronRight size={18}/></button>
       </div>
     </section>
@@ -1450,10 +1466,19 @@ function Success({order,onReset}){
 export default App
 
 function DeliverySwitch({type,setType}){return <div className="delivery-switch"><button type="button" className={type==='pickup'?'selected':''} onClick={()=>setType('pickup')}>Recoger en sucursal</button><button type="button" className={type==='delivery'?'selected':''} onClick={()=>setType('delivery')}>A domicilio</button></div>}
-function AddressModal({zones,onClose,onSaved}){
- const [draft,setDraft]=useState({label:'Casa',street:'',exterior_number:'',interior_number:'',postal_code:'',zone_id:'',references:''})
+function AddressModal({zones,address,onClose,onSaved}){
+ const [draft,setDraft]=useState(()=>({label:address?.label||'Casa',street:address?.street||'',exterior_number:address?.exterior_number||'',interior_number:address?.interior_number||'',postal_code:address?.postal_code||'',zone_id:address?.zone_id||'',references:address?.references||''}))
  const [busy,setBusy]=useState(false),[error,setError]=useState('')
  const change=(key,value)=>setDraft(d=>({...d,[key]:value}))
- const save=async(e)=>{e.preventDefault();setBusy(true);setError('');const {data,error:err}=await supabase.from('customer_addresses').insert({...draft}).select('id').single();setBusy(false);if(err)setError(err.message);else onSaved(data.id)}
- return <div className="address-overlay" onMouseDown={onClose}><form className="address-dialog" onMouseDown={e=>e.stopPropagation()} onSubmit={save}><header><div><span className="address-dialog-eyebrow">TUS DIRECCIONES</span><h2>Agregar dirección</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={20}/></button></header><div className="address-fields">{[['label','Nombre de la dirección'],['street','Calle'],['exterior_number','Número exterior'],['interior_number','Número interior'],['postal_code','Código postal']].map(([key,label])=><label key={key}>{label}<input required={key!=='interior_number'} maxLength={key==='postal_code'?5:120} value={draft[key]} onChange={e=>change(key,e.target.value)}/></label>)}<label>Colonia<select required value={draft.zone_id} onChange={e=>change('zone_id',e.target.value)}><option value="">Seleccionar colonia</option>{zones.map(z=><option key={z.id} value={z.id}>{z.name}</option>)}</select></label><label className="wide">Detalles o referencias<textarea value={draft.references} onChange={e=>change('references',e.target.value)}/></label></div>{error&&<p className="checkout-error">{error}</p>}<button className="primary" disabled={busy}>{busy?'Guardando…':'Guardar dirección'}</button></form></div>
+ const save=async(e)=>{
+   e.preventDefault();setBusy(true);setError('')
+   const payload={...draft}
+   const result=address
+      ? await supabase.from('customer_addresses').update(payload).eq('id',address.id).select('id').single()
+      : await supabase.from('customer_addresses').insert(payload).select('id').single()
+   setBusy(false)
+   if(result.error)setError(result.error.message)
+   else onSaved(result.data.id)
+ }
+ return <div className="address-overlay" onMouseDown={onClose}><form className="address-dialog" onMouseDown={e=>e.stopPropagation()} onSubmit={save}><header><div><span className="address-dialog-eyebrow">TUS DIRECCIONES</span><h2>{address?'Editar dirección':'Agregar dirección'}</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X size={20}/></button></header><div className="address-fields">{[['label','Nombre de la dirección'],['street','Calle'],['exterior_number','Número exterior'],['interior_number','Número interior'],['postal_code','Código postal']].map(([key,label])=><label key={key}>{label}<input required={key!=='interior_number'} maxLength={key==='postal_code'?5:120} value={draft[key]} onChange={e=>change(key,e.target.value)}/></label>)}<label>Colonia<select required value={draft.zone_id} onChange={e=>change('zone_id',e.target.value)}><option value="">Seleccionar colonia</option>{zones.map(z=><option key={z.id} value={z.id}>{z.name}</option>)}</select></label><label className="wide">Detalles o referencias<textarea value={draft.references} onChange={e=>change('references',e.target.value)}/></label></div>{error&&<p className="checkout-error">{error}</p>}<button className="primary" disabled={busy}>{busy?'Guardando…':address?'Guardar cambios':'Guardar dirección'}</button></form></div>
 }

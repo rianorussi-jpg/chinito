@@ -2763,3 +2763,24 @@
  .address-dialog .address-fields input,.address-dialog .address-fields select{min-width:0;width:100%}
 }
 @media(max-width:375px){.topbar .brand-mini{max-width:25%}.topbar .brand-mini img{height:32px}.address-top-button{max-width:115px}}
+
+/* Ajustes de carrito, tipografía y gestión de direcciones */
+.cart-sheet,.cart-sheet h2,.cart-sheet h3,.cart-sheet span,.cart-sheet p,.cart-sheet button:not(.primary),.cart-sheet-qty{color:#211b18}
+.cart-sheet-shipping{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 2px;border-top:1px solid #eee4db;font-size:13px;font-weight:700;color:#211b18}
+.cart-sheet-shipping strong{font-size:14px;color:#211b18}
+.delivery-switch button:not(.selected){color:#211b18!important;background:#fff!important}
+.checkout-section .tip-buttons button{color:#211b18;font-size:12px;font-weight:700;padding:10px 12px;line-height:1.25}
+.checkout-section .tip-buttons button.selected{color:#211b18;background:#fff1ed;border-color:var(--red)}
+.checkout-section:has(.tip-buttons)>h2{font-size:17px!important;font-weight:800;color:#211b18;margin:0 0 5px}
+.checkout-section:has(.tip-buttons)>p,.checkout-section .tip-custom{color:#211b18;font-size:12px;line-height:1.5}
+.checkout-section .tip-custom input{font-size:16px;color:#211b18}
+.address-menu-entry{display:flex;align-items:center;gap:2px;border:1px solid transparent;border-radius:13px;color:#241b18}
+.address-menu-entry.selected{background:#fff1ee;border-color:#f2d2ca}
+.address-menu-entry .address-menu-option{flex:1;min-width:0;background:transparent;color:#241b18;padding-right:3px}
+.address-entry-actions{display:flex;align-items:center;gap:3px;padding-right:5px}
+.address-entry-actions button{border:0;background:#fff;border-radius:9px;width:30px;height:32px;display:grid;place-items:center;color:#3d322d;cursor:pointer}
+.address-entry-actions button:last-child{color:#bd1b24}
+.address-entry-actions button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.address-action-error{color:#bd1b24;font-size:11px;padding:8px}
+@media(max-width:650px){.checkout-section:has(.tip-buttons)>h2{font-size:15px!important}.checkout-section .tip-buttons button{font-size:11px;padding:9px 10px}}
+.cart-sheet-footer strong,.cart-sheet-copy strong{color:#211b18}
