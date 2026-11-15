@@ -1015,7 +1015,7 @@ function OrderDetailsModal({order,now,onClose,onAcknowledge,onAdvance}){
 function ScheduledOrdersModal({orders,now,onClose}){
  return <div className="scheduled-orders-overlay" onMouseDown={onClose}>
    <section className="scheduled-orders-modal" onMouseDown={e=>e.stopPropagation()}>
-     <header><div><span>PEDIDOS PROGRAMADOS</span><h2>Próximos pickups</h2><p>Se moverán automáticamente a Preparando 15 minutos antes de la hora elegida.</p></div><button onClick={onClose} aria-label="Cerrar"><X size={21}/></button></header>
+     <header><div><span>PEDIDOS PROGRAMADOS</span><h2>Próximos pedidos</h2><p>Se moverán automáticamente a Preparando 15 minutos antes de la hora elegida.</p></div><button onClick={onClose} aria-label="Cerrar"><X size={21}/></button></header>
      <div className="scheduled-orders-list">
        {orders.length===0?<div className="scheduled-orders-empty"><Clock3 size={34}/><h3>No hay pedidos programados</h3><p>Los pedidos con horario futuro aparecerán aquí hasta 15 minutos antes de su pickup.</p></div>:orders.map(order=>{
          const minutes=minutesUntilPickup(order,now)
